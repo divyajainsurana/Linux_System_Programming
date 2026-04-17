@@ -1,4 +1,4 @@
-📌 Project: mydateProject: localdate
+📌 Project: localdate
 
 localdate is a custom CLI command that prints the current local date.
 
