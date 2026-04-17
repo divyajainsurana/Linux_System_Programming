@@ -11,15 +11,17 @@ Lightweight and fast (uses standard C libraries)
 
 🧪 **Usage**
 
-localdate              # prints local date
+localdate: prints local date
 
-localdate -h           # shows help message
+localdate -h: shows help message
 
 **📂Project Structure**
 
-localdate.c        # Source code
-AGENTS.md          # AI agent guidelines
-README.md         # Project documentation
+localdate.c: Source code
+
+AGENTS.md: AI agent guidelines
+
+README.md: Project documentation
 
 **You can run:**
 localdate or localdate -h
