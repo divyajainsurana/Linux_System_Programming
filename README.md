@@ -18,7 +18,9 @@ localdate -h           # shows help message
 **📂Project Structure**
 
 localdate.c        # Source code
+
 AGENTS.md          # AI agent guidelines
+
 README.md         # Project documentation
 
 **You can run:**
