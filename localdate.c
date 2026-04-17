@@ -1,7 +1,21 @@
 #include <stdio.h>
 #include <time.h>
+#include <string.h>
 
-int main() {
+void print_help() {
+    printf("Usage: mydate [options]\n");
+    printf("Options:\n");
+    printf("  -h    Show this help message\n");
+}
+
+int main(int argc, char *argv[]) {
+
+    //Check for -h flag
+    if (argc > 1 && strcmp(argv[1], "-h") == 0) {
+        print_help();
+        return 0;
+    }
+
     time_t t;
     struct tm *local;
 
