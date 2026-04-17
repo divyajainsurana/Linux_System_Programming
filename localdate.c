@@ -3,7 +3,7 @@
 #include <string.h>
 
 void print_help() {
-    printf("Usage: mydate [options]\n");
+    printf("Usage: localdate [options]\n");
     printf("Options:\n");
     printf("  -h    Show this help message\n");
 }
