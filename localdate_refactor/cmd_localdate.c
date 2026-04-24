@@ -1,74 +1,44 @@
-#include "cmd_localdate.h"
-
 #include <stdio.h>
 #include <time.h>
+
 #include "argtable3.h"
-
-/*
- * This function is expected to be provided by the shell registry.
- * When building only the standalone binary, do not compile/link this
- * function unless your shell registry object is also linked.
- */
-extern void register_command(const cmd_spec_t *spec);
-
-static void build_localdate_argtable(struct arg_lit **help,
-                                     struct arg_end **end,
-                                     void ***argtable_out)
-{
-    *help = arg_lit0("h", "help", "show help and exit");
-    *end = arg_end(20);
-
-    static void *argtable[3];
-    argtable[0] = *help;
-    argtable[1] = *end;
-    argtable[2] = NULL;
-
-    *argtable_out = argtable;
-}
-
-void localdate_print_usage(FILE *out)
-{
-    struct arg_lit *help;
-    struct arg_end *end;
-    void **argtable;
-
-    build_localdate_argtable(&help, &end, &argtable);
-
-    fprintf(out, "Usage: localdate ");
-    arg_print_syntax(out, argtable, "\n");
-    fprintf(out, "\nOptions:\n");
-    arg_print_glossary(out, argtable, "  %-20s %s\n");
-}
+#include "cmd_spec.h"
+#include "cmd_localdate.h"
 
 int localdate_run(int argc, char **argv)
 {
     struct arg_lit *help;
     struct arg_end *end;
-    void **argtable;
+    void *argtable[3];
 
-    build_localdate_argtable(&help, &end, &argtable);
+    help = arg_lit0("h", "help", "show help and exit");
+    end = arg_end(20);
+
+    argtable[0] = help;
+    argtable[1] = end;
+    argtable[2] = NULL;
 
     int nerrors = arg_parse(argc, argv, argtable);
 
     if (help->count > 0) {
         localdate_print_usage(stdout);
-        arg_freetable(argtable, sizeof(argtable) / sizeof(argtable[0]) - 1);
+        arg_freetable(argtable, 2);
         return 0;
     }
 
     if (nerrors > 0) {
-        arg_print_errors(stdout, end, "localdate");
-        localdate_print_usage(stdout);
-        arg_freetable(argtable, sizeof(argtable) / sizeof(argtable[0]) - 1);
+        arg_print_errors(stderr, end, "localdate");
+        localdate_print_usage(stderr);
+        arg_freetable(argtable, 2);
         return 1;
     }
 
-    time_t t = time(NULL);
-    struct tm *local = localtime(&t);
+    time_t now = time(NULL);
+    struct tm *local = localtime(&now);
 
     if (local == NULL) {
         fprintf(stderr, "localdate: failed to get local time\n");
-        arg_freetable(argtable, sizeof(argtable) / sizeof(argtable[0]) - 1);
+        arg_freetable(argtable, 2);
         return 1;
     }
 
@@ -77,14 +47,36 @@ int localdate_run(int argc, char **argv)
            local->tm_mon + 1,
            local->tm_mday);
 
-    arg_freetable(argtable, sizeof(argtable) / sizeof(argtable[0]) - 1);
+    arg_freetable(argtable, 2);
     return 0;
+}
+
+void localdate_print_usage(FILE *out)
+{
+    struct arg_lit *help;
+    struct arg_end *end;
+    void *argtable[3];
+
+    help = arg_lit0("h", "help", "show help and exit");
+    end = arg_end(20);
+
+    argtable[0] = help;
+    argtable[1] = end;
+    argtable[2] = NULL;
+
+    fprintf(out, "Usage: localdate ");
+    arg_print_syntax(out, argtable, "\n");
+
+    fprintf(out, "\nOptions:\n");
+    arg_print_glossary(out, argtable, "  %-20s %s\n");
+
+    arg_freetable(argtable, 2);
 }
 
 cmd_spec_t cmd_localdate_spec = {
     .name = "localdate",
     .summary = "print the current local date",
-    .long_help = "Print the current local date in YYYY-MM-DD format using the system local timezone.",
+    .long_help = "Print the current local date in YYYY-MM-DD format.",
     .run = localdate_run,
     .print_usage = localdate_print_usage,
 };

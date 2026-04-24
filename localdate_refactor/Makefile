@@ -1,8 +1,15 @@
 CC = gcc
 CFLAGS = -Wall -Wextra -std=c11
-TARGET = localdate
 
-SRC = localdate_main.c cmd_localdate.c registry.c register_all_commands.c $(wildcard argtable3/src/*.c)
+TARGET = myshell
+
+SRC = main.c \
+      cmd_localdate.c \
+      cmd_ls.c \
+      registry.c \
+      register_all_commands.c \
+      $(wildcard argtable3/src/*.c)
+
 OBJ = $(SRC:.c=.o)
 
 all: $(TARGET)
@@ -20,4 +27,10 @@ run: all
 	./$(TARGET)
 
 help: all
-	./$(TARGET) -h
+	./$(TARGET) localdate -h
+
+test: all
+	./$(TARGET) localdate
+	./$(TARGET) localdate -h
+	./$(TARGET) ls
+	./$(TARGET) ls -a

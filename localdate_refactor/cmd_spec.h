@@ -11,4 +11,11 @@ typedef struct cmd_spec {
     void (*print_usage)(FILE *out);
 } cmd_spec_t;
 
+void register_command(const cmd_spec_t *spec);
+const cmd_spec_t *find_command(const char *name);
+
+void for_each_command(
+    void (*callback)(const cmd_spec_t *spec, void *userdata),
+    void *userdata
+);
 #endif
