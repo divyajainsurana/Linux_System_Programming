@@ -57,6 +57,7 @@ Lists directory contents.
 * Lists files in current directory (default)
 * `-a` → includes hidden files
 * Supports custom path input
+* --json → outputs structured JSON
 * `-h` → help
 
 #### Usage
@@ -65,6 +66,7 @@ Lists directory contents.
 ./myshell ls
 ./myshell ls -a
 ./myshell ls /tmp
+./myshell ls --json
 ./myshell ls -h
 ```
 
