@@ -14,6 +14,10 @@ printf "\033[1mTesting ls...\033[0m\n"
 ./myshell ls -h | grep "Usage:"
 ./myshell ls /tmp > /dev/null
 
+printf "\033[1mTesting cat...\033[0m\n"
+./myshell cat Makefile | grep "TARGET = myshell"
+./myshell cat -h | grep "Usage:"
+
 printf "\033[1mTesting invalid command...\033[0m\n"
 if ./myshell unknown; then
     echo "FAIL: unknown command should fail"

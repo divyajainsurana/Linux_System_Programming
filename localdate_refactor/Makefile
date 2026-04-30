@@ -6,6 +6,7 @@ TARGET = myshell
 SRC = main.c \
       cmd_localdate.c \
       cmd_ls.c \
+      cmd_cat.c \
       registry.c \
       register_all_commands.c \
       $(wildcard argtable3/src/*.c)
@@ -34,3 +35,4 @@ test: all
 	./$(TARGET) localdate -h
 	./$(TARGET) ls
 	./$(TARGET) ls -a
+	./$(TARGET) cat Makefile

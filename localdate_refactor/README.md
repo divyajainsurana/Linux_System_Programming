@@ -72,6 +72,28 @@ Lists directory contents.
 
 ---
 
+### 🟢 `cat`
+
+Prints file contents to standard output.
+
+#### Features
+
+* Prints one or more files
+* Reads from standard input when no file is provided
+* Supports `-` to read from standard input
+* Supports `-h` for help
+
+#### Usage
+
+```bash
+./myshell cat README.md
+./myshell cat file1.txt file2.txt
+./myshell cat -
+./myshell cat -h
+```
+
+---
+
 ## 🧠 Architecture
 
 Each command follows a consistent structure:
@@ -110,6 +132,8 @@ The main dispatcher:
 ├── cmd_localdate.h
 ├── cmd_ls.c
 ├── cmd_ls.h
+├── cmd_cat.c
+├── cmd_cat.h
 │
 ├── argtable3/
 │   └── src/
@@ -128,6 +152,7 @@ The main dispatcher:
 * **C (C11 standard)**
 * **argtable3** → CLI argument parsing
 * **POSIX APIs** → directory handling (`ls`)
+* **Standard C file I/O** → file reading (`cat`)
 * **Makefile** → build system
 
 ---
@@ -162,7 +187,7 @@ myshell
 
 ## 🚀 Future Improvements
 
-* Add more commands (`wc`, `cat`)
+* Add more commands (`wc`)
 * Support multiple arguments in `ls`
 * Improve output formatting
 * Add error handling enhancements

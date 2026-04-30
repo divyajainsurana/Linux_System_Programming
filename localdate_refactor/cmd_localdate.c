@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <time.h>
 
-#include "argtable3.h"
+#include "argtable3/src/argtable3.h"
 #include "cmd_spec.h"
 #include "cmd_localdate.h"
 
