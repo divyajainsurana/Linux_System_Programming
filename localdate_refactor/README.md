@@ -94,6 +94,27 @@ Prints file contents to standard output.
 
 ---
 
+### 🟣 `pkg`
+
+Prints package metadata and registered command summaries.
+
+#### Features
+
+* Displays package name, version, and description
+* Lists registered commands from the command registry
+* `--json` → outputs structured JSON
+* Supports `-h` for help
+
+#### Usage
+
+```bash
+./myshell pkg
+./myshell pkg --json
+./myshell pkg -h
+```
+
+---
+
 ## 🧠 Architecture
 
 Each command follows a consistent structure:
@@ -134,6 +155,8 @@ The main dispatcher:
 ├── cmd_ls.h
 ├── cmd_cat.c
 ├── cmd_cat.h
+├── cmd_pkg.c
+├── cmd_pkg.h
 │
 ├── argtable3/
 │   └── src/

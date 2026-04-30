@@ -7,6 +7,7 @@ SRC = main.c \
       cmd_localdate.c \
       cmd_ls.c \
       cmd_cat.c \
+      cmd_pkg.c \
       registry.c \
       register_all_commands.c \
       $(wildcard argtable3/src/*.c)
@@ -36,3 +37,4 @@ test: all
 	./$(TARGET) ls
 	./$(TARGET) ls -a
 	./$(TARGET) cat Makefile
+	./$(TARGET) pkg

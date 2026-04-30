@@ -18,6 +18,12 @@ printf "\033[1mTesting cat...\033[0m\n"
 ./myshell cat Makefile | grep "TARGET = myshell"
 ./myshell cat -h | grep "Usage:"
 
+printf "\033[1mTesting pkg...\033[0m\n"
+./myshell pkg | grep "Package: myshell"
+./myshell pkg | grep "pkg - print package metadata"
+./myshell pkg --json | grep "\"name\":\"myshell\""
+./myshell pkg -h | grep "Usage:"
+
 printf "\033[1mTesting invalid command...\033[0m\n"
 if ./myshell unknown; then
     echo "FAIL: unknown command should fail"
