@@ -1,0 +1,8 @@
+*.o
+Unix_Shell
+.DS_Store
+myenv/
+offline_week01/
+offline_week02/
+Session 3_ How to implement a Shell/
+shell_test_out.txt
