@@ -1,0 +1,51 @@
+PicoShell Assignment
+################
+description: A tiny UNIX shell with job control.
+################
+
+Files:
+
+Makefile	# Compiles the shell program and helper programs
+README		# This file
+psh.c		# The shell program
+
+# Little C programs that are called by the trace files
+myspin.c	# Takes argument <n> and spins for <n> seconds
+mysplit.c	# Forks a child that spins for <n> seconds
+mystop.c        # Spins for <n> seconds and sends SIGTSTP to itself
+myint.c         # Spins for <n> seconds and sends SIGINT to itself
+test.sh         # Smoke tests for the shell
+
+Build:
+
+    make
+
+Run:
+
+    ./psh
+
+Run without prompt for tests:
+
+    ./psh -p
+
+Built-in commands:
+
+    quit        Exit the shell
+    jobs        List active jobs
+    bg <job>    Resume a stopped job in the background
+    fg <job>    Resume a stopped/background job in the foreground
+
+Job IDs use the form %1, %2, etc. Process IDs may also be used for bg/fg.
+
+Examples:
+
+    psh> ./myspin 5 &
+    [1] (12345) ./myspin 5 &
+    psh> jobs
+    [1] (12345) Running ./myspin 5 &
+    psh> fg %1
+
+Test:
+
+    make test
+

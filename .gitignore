@@ -1,5 +1,10 @@
 *.o
 Unix_Shell
+psh
+myspin
+mysplit
+mystop
+myint
 .DS_Store
 myenv/
 offline_week01/
