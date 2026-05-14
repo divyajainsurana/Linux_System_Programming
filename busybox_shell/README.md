@@ -47,6 +47,21 @@ busybox_shell> pkg
 busybox_shell> exit
 ```
 
+Interactive sessions support command history:
+
+```text
+Up arrow      recall older commands
+Down arrow    move forward through recalled commands
+Left/Right    move the cursor while editing
+Backspace     edit the current command
+```
+
+History is saved between sessions in:
+
+```text
+~/.busybox_shell_history
+```
+
 ## Commands
 
 Built-in commands currently registered:
@@ -318,6 +333,7 @@ The shell flow is:
 
 ```text
 read input
+load/save interactive history
 split into argv
 handle help/exit/quit
 find command in registry
@@ -338,6 +354,8 @@ rm removes files but does not recursively delete directories
 pkg uses simple string-based pkg.json parsing, not a full JSON parser
 package-installed commands are linked into ~/.mysh/bin but are not yet
 automatically executed by the interactive shell unless run by path
+command history supports simple quoted text only through the existing
+whitespace-based command splitter
 ```
 
 ## Author

@@ -1,12 +1,20 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
+#include <termios.h>
+#include <unistd.h>
 #include "cmd_spec.h"
 #include "json_utils.h"
 
 #define MAX_INPUT 1024
 #define MAX_ARGS 64
+#define MAX_HISTORY 100
 #define SHELL_NAME "busybox_shell"
 #define SHELL_VERSION "1.0.0"
+#define HISTORY_FILE ".busybox_shell_history"
+
+static char *history[MAX_HISTORY];
+static int history_count;
 
 void register_all_builtin_commands(void);
 
@@ -165,6 +173,257 @@ static int split_line(char *line, char **argv, int max_args)
     return argc;
 }
 
+static char *shell_strdup(const char *text)
+{
+    size_t length = strlen(text) + 1;
+    char *copy = malloc(length);
+
+    if (copy != NULL) {
+        memcpy(copy, text, length);
+    }
+
+    return copy;
+}
+
+static int is_blank_line(const char *line)
+{
+    while (*line != '\0') {
+        if (*line != ' ' && *line != '\t' && *line != '\r' && *line != '\n') {
+            return 0;
+        }
+        line++;
+    }
+
+    return 1;
+}
+
+static void trim_newline(char *line)
+{
+    size_t length = strlen(line);
+
+    while (length > 0 && (line[length - 1] == '\n' || line[length - 1] == '\r')) {
+        line[length - 1] = '\0';
+        length--;
+    }
+}
+
+static void add_history_entry(const char *line)
+{
+    char *copy;
+    int index;
+
+    if (line == NULL || is_blank_line(line)) {
+        return;
+    }
+
+    if (history_count > 0 && strcmp(history[history_count - 1], line) == 0) {
+        return;
+    }
+
+    copy = shell_strdup(line);
+    if (copy == NULL) {
+        return;
+    }
+
+    if (history_count == MAX_HISTORY) {
+        free(history[0]);
+        for (index = 1; index < MAX_HISTORY; index++) {
+            history[index - 1] = history[index];
+        }
+        history_count--;
+    }
+
+    history[history_count++] = copy;
+}
+
+static void get_history_path(char *path, size_t path_size)
+{
+    const char *home = getenv("HOME");
+
+    if (home != NULL && *home != '\0') {
+        snprintf(path, path_size, "%s/%s", home, HISTORY_FILE);
+    } else {
+        snprintf(path, path_size, "%s", HISTORY_FILE);
+    }
+}
+
+static void load_history(void)
+{
+    char path[MAX_INPUT];
+    char line[MAX_INPUT];
+    FILE *in;
+
+    get_history_path(path, sizeof(path));
+    in = fopen(path, "r");
+    if (in == NULL) {
+        return;
+    }
+
+    while (fgets(line, sizeof(line), in) != NULL) {
+        trim_newline(line);
+        add_history_entry(line);
+    }
+
+    fclose(in);
+}
+
+static void save_history(void)
+{
+    char path[MAX_INPUT];
+    FILE *out;
+    int index;
+
+    get_history_path(path, sizeof(path));
+    out = fopen(path, "w");
+    if (out == NULL) {
+        return;
+    }
+
+    for (index = 0; index < history_count; index++) {
+        fprintf(out, "%s\n", history[index]);
+    }
+
+    fclose(out);
+}
+
+static void free_history(void)
+{
+    int index;
+
+    for (index = 0; index < history_count; index++) {
+        free(history[index]);
+    }
+    history_count = 0;
+}
+
+static void refresh_input_line(const char *prompt, const char *line, size_t cursor)
+{
+    size_t length = strlen(line);
+
+    printf("\r%s%s\033[K", prompt, line);
+    if (length > cursor) {
+        printf("\033[%zuD", length - cursor);
+    }
+    fflush(stdout);
+}
+
+static int read_line_raw(const char *prompt, char *line, size_t line_size)
+{
+    struct termios original;
+    struct termios raw;
+    char saved_line[MAX_INPUT] = "";
+    size_t length = 0;
+    size_t cursor = 0;
+    int history_index = history_count;
+
+    if (tcgetattr(STDIN_FILENO, &original) != 0) {
+        return 0;
+    }
+
+    raw = original;
+    raw.c_lflag &= (tcflag_t) ~(ICANON | ECHO);
+    raw.c_cc[VMIN] = 1;
+    raw.c_cc[VTIME] = 0;
+
+    if (tcsetattr(STDIN_FILENO, TCSAFLUSH, &raw) != 0) {
+        return 0;
+    }
+
+    line[0] = '\0';
+    printf("%s", prompt);
+    fflush(stdout);
+
+    while (1) {
+        unsigned char ch;
+
+        if (read(STDIN_FILENO, &ch, 1) != 1) {
+            tcsetattr(STDIN_FILENO, TCSAFLUSH, &original);
+            return 0;
+        }
+
+        if (ch == '\n' || ch == '\r') {
+            putchar('\n');
+            line[length] = '\0';
+            tcsetattr(STDIN_FILENO, TCSAFLUSH, &original);
+            return 1;
+        }
+
+        if (ch == 4 && length == 0) {
+            putchar('\n');
+            tcsetattr(STDIN_FILENO, TCSAFLUSH, &original);
+            return 0;
+        }
+
+        if (ch == 127 || ch == 8) {
+            if (cursor > 0) {
+                memmove(line + cursor - 1, line + cursor, length - cursor + 1);
+                cursor--;
+                length--;
+                refresh_input_line(prompt, line, cursor);
+            }
+            continue;
+        }
+
+        if (ch == 27) {
+            unsigned char seq[2];
+
+            if (read(STDIN_FILENO, &seq[0], 1) != 1 ||
+                read(STDIN_FILENO, &seq[1], 1) != 1) {
+                continue;
+            }
+
+            if (seq[0] != '[') {
+                continue;
+            }
+
+            if (seq[1] == 'A' && history_count > 0) {
+                if (history_index == history_count) {
+                    snprintf(saved_line, sizeof(saved_line), "%s", line);
+                }
+                if (history_index > 0) {
+                    history_index--;
+                    snprintf(line, line_size, "%s", history[history_index]);
+                    length = strlen(line);
+                    cursor = length;
+                    refresh_input_line(prompt, line, cursor);
+                }
+            } else if (seq[1] == 'B') {
+                if (history_index < history_count - 1) {
+                    history_index++;
+                    snprintf(line, line_size, "%s", history[history_index]);
+                } else if (history_index < history_count) {
+                    history_index = history_count;
+                    snprintf(line, line_size, "%s", saved_line);
+                }
+                length = strlen(line);
+                cursor = length;
+                refresh_input_line(prompt, line, cursor);
+            } else if (seq[1] == 'C') {
+                if (cursor < length) {
+                    cursor++;
+                    printf("\033[C");
+                    fflush(stdout);
+                }
+            } else if (seq[1] == 'D') {
+                if (cursor > 0) {
+                    cursor--;
+                    printf("\033[D");
+                    fflush(stdout);
+                }
+            }
+            continue;
+        }
+
+        if (ch >= 32 && ch <= 126 && length < line_size - 1) {
+            memmove(line + cursor + 1, line + cursor, length - cursor + 1);
+            line[cursor] = (char) ch;
+            cursor++;
+            length++;
+            refresh_input_line(prompt, line, cursor);
+        }
+    }
+}
+
 static int dispatch_command(int argc, char **argv)
 {
     const cmd_spec_t *cmd;
@@ -241,20 +500,41 @@ static int run_interactive_shell(void)
     char *argv[MAX_ARGS];
     int argc;
     int status = 0;
+    int interactive_terminal = isatty(STDIN_FILENO);
+
+    if (interactive_terminal) {
+        load_history();
+    }
 
     while (1) {
-        printf("busybox_shell> ");
-        fflush(stdout);
+        if (interactive_terminal) {
+            if (!read_line_raw("busybox_shell> ", line, sizeof(line))) {
+                save_history();
+                free_history();
+                return status;
+            }
+        } else {
+            printf("busybox_shell> ");
+            fflush(stdout);
 
-        if (fgets(line, sizeof(line), stdin) == NULL) {
-            printf("\n");
-            return status;
+            if (fgets(line, sizeof(line), stdin) == NULL) {
+                printf("\n");
+                return status;
+            }
+            trim_newline(line);
         }
 
+        if (interactive_terminal) {
+            add_history_entry(line);
+        }
         argc = split_line(line, argv, MAX_ARGS);
         status = dispatch_command(argc, argv);
 
         if (status < 0) {
+            if (interactive_terminal) {
+                save_history();
+                free_history();
+            }
             return 0;
         }
     }
