@@ -52,6 +52,7 @@ Interactive sessions support command history:
 ```text
 Up arrow      recall older commands
 Down arrow    move forward through recalled commands
+Tab           complete command names or file paths
 Left/Right    move the cursor while editing
 Backspace     edit the current command
 ```
@@ -60,6 +61,15 @@ History is saved between sessions in:
 
 ```text
 ~/.busybox_shell_history
+```
+
+Tab completion uses command names for the first word and file/path names for
+later words:
+
+```text
+busybox_shell> ec<Tab>        completes to echo
+busybox_shell> cat READ<Tab>  completes to README.md when it is unique
+busybox_shell> c<Tab>         shows matches such as cat, clear, and cp
 ```
 
 ## Commands
@@ -356,6 +366,8 @@ package-installed commands are linked into ~/.mysh/bin but are not yet
 automatically executed by the interactive shell unless run by path
 command history supports simple quoted text only through the existing
 whitespace-based command splitter
+tab completion follows the same whitespace-based parsing, so paths containing
+spaces are not completed as quoted shell words yet
 ```
 
 ## Author

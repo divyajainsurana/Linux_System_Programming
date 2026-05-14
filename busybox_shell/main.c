@@ -1,6 +1,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <dirent.h>
+#include <sys/stat.h>
 #include <termios.h>
 #include <unistd.h>
 #include "cmd_spec.h"
@@ -9,12 +11,24 @@
 #define MAX_INPUT 1024
 #define MAX_ARGS 64
 #define MAX_HISTORY 100
+#define MAX_COMPLETIONS 128
 #define SHELL_NAME "busybox_shell"
 #define SHELL_VERSION "1.0.0"
 #define HISTORY_FILE ".busybox_shell_history"
 
 static char *history[MAX_HISTORY];
 static int history_count;
+
+struct completion_list {
+    char *items[MAX_COMPLETIONS];
+    int count;
+};
+
+struct command_completion_state {
+    const char *prefix;
+    size_t prefix_length;
+    struct completion_list *list;
+};
 
 void register_all_builtin_commands(void);
 
@@ -296,6 +310,236 @@ static void free_history(void)
     history_count = 0;
 }
 
+static void free_completions(struct completion_list *list)
+{
+    int index;
+
+    for (index = 0; index < list->count; index++) {
+        free(list->items[index]);
+    }
+    list->count = 0;
+}
+
+static int completion_exists(const struct completion_list *list, const char *item)
+{
+    int index;
+
+    for (index = 0; index < list->count; index++) {
+        if (strcmp(list->items[index], item) == 0) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+static void add_completion(struct completion_list *list, const char *item)
+{
+    char *copy;
+
+    if (list->count >= MAX_COMPLETIONS || completion_exists(list, item)) {
+        return;
+    }
+
+    copy = shell_strdup(item);
+    if (copy == NULL) {
+        return;
+    }
+
+    list->items[list->count++] = copy;
+}
+
+static void add_command_completion(const char *name, struct completion_list *list,
+                                   const char *prefix, size_t prefix_length)
+{
+    if (strncmp(name, prefix, prefix_length) == 0) {
+        add_completion(list, name);
+    }
+}
+
+static void collect_registered_command_completion(const cmd_spec_t *spec, void *userdata)
+{
+    struct command_completion_state *state = userdata;
+
+    add_command_completion(spec->name, state->list, state->prefix, state->prefix_length);
+}
+
+static void collect_command_completions(const char *prefix, struct completion_list *list)
+{
+    static const char *builtins[] = {"help", "exit", "quit", "version"};
+    struct command_completion_state state;
+    size_t prefix_length = strlen(prefix);
+    size_t index;
+
+    for (index = 0; index < sizeof(builtins) / sizeof(builtins[0]); index++) {
+        add_command_completion(builtins[index], list, prefix, prefix_length);
+    }
+
+    state.prefix = prefix;
+    state.prefix_length = prefix_length;
+    state.list = list;
+    for_each_command(collect_registered_command_completion, &state);
+}
+
+static int path_is_directory(const char *path)
+{
+    struct stat info;
+
+    return stat(path, &info) == 0 && S_ISDIR(info.st_mode);
+}
+
+static void join_path(char *out, size_t out_size, const char *dir, const char *name)
+{
+    if (strcmp(dir, ".") == 0) {
+        snprintf(out, out_size, "%s", name);
+    } else if (dir[0] != '\0' && dir[strlen(dir) - 1] == '/') {
+        snprintf(out, out_size, "%s%s", dir, name);
+    } else {
+        snprintf(out, out_size, "%s/%s", dir, name);
+    }
+}
+
+static void collect_path_completions(const char *word, struct completion_list *list)
+{
+    char directory[MAX_INPUT];
+    char base[MAX_INPUT];
+    char display_prefix[MAX_INPUT];
+    const char *slash = strrchr(word, '/');
+    DIR *dir;
+    struct dirent *entry;
+
+    if (slash != NULL) {
+        size_t directory_length = (size_t) (slash - word);
+        size_t prefix_length = (size_t) (slash - word) + 1;
+
+        if (directory_length == 0) {
+            snprintf(directory, sizeof(directory), "/");
+        } else {
+            snprintf(directory, sizeof(directory), "%.*s", (int) directory_length, word);
+        }
+        snprintf(display_prefix, sizeof(display_prefix), "%.*s", (int) prefix_length, word);
+        snprintf(base, sizeof(base), "%s", slash + 1);
+    } else {
+        snprintf(directory, sizeof(directory), ".");
+        display_prefix[0] = '\0';
+        snprintf(base, sizeof(base), "%s", word);
+    }
+
+    dir = opendir(directory);
+    if (dir == NULL) {
+        return;
+    }
+
+    while ((entry = readdir(dir)) != NULL) {
+        char full_path[MAX_INPUT];
+        char completion[MAX_INPUT];
+        size_t base_length = strlen(base);
+
+        if (base[0] != '.' && entry->d_name[0] == '.') {
+            continue;
+        }
+
+        if (strncmp(entry->d_name, base, base_length) != 0) {
+            continue;
+        }
+
+        join_path(full_path, sizeof(full_path), directory, entry->d_name);
+        snprintf(completion, sizeof(completion), "%s%s%s",
+                 display_prefix,
+                 entry->d_name,
+                 path_is_directory(full_path) ? "/" : "");
+        add_completion(list, completion);
+    }
+
+    closedir(dir);
+}
+
+static size_t current_word_start(const char *line, size_t cursor)
+{
+    size_t start = cursor;
+
+    while (start > 0 && line[start - 1] != ' ' && line[start - 1] != '\t') {
+        start--;
+    }
+
+    return start;
+}
+
+static int completing_command_word(const char *line, size_t word_start)
+{
+    size_t index;
+
+    for (index = 0; index < word_start; index++) {
+        if (line[index] != ' ' && line[index] != '\t') {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+static void longest_common_prefix(const struct completion_list *list, char *out, size_t out_size)
+{
+    size_t prefix_length;
+    int index;
+
+    if (list->count == 0) {
+        out[0] = '\0';
+        return;
+    }
+
+    snprintf(out, out_size, "%s", list->items[0]);
+    prefix_length = strlen(out);
+
+    for (index = 1; index < list->count; index++) {
+        size_t current = 0;
+
+        while (current < prefix_length &&
+               list->items[index][current] != '\0' &&
+               out[current] == list->items[index][current]) {
+            current++;
+        }
+
+        prefix_length = current;
+        out[prefix_length] = '\0';
+    }
+}
+
+static int replace_current_word(char *line, size_t line_size, size_t *length,
+                                size_t *cursor, size_t word_start,
+                                const char *replacement)
+{
+    size_t replacement_length = strlen(replacement);
+    size_t suffix_length = *length - *cursor;
+    size_t new_length = word_start + replacement_length + suffix_length;
+
+    if (new_length >= line_size) {
+        return 0;
+    }
+
+    memmove(line + word_start + replacement_length,
+            line + *cursor,
+            suffix_length + 1);
+    memcpy(line + word_start, replacement, replacement_length);
+    *cursor = word_start + replacement_length;
+    *length = new_length;
+    return 1;
+}
+
+static void print_completion_matches(const struct completion_list *list)
+{
+    int index;
+
+    putchar('\n');
+    for (index = 0; index < list->count; index++) {
+        printf("%s", list->items[index]);
+        if (index + 1 < list->count) {
+            printf("  ");
+        }
+    }
+    putchar('\n');
+}
+
 static void refresh_input_line(const char *prompt, const char *line, size_t cursor)
 {
     size_t length = strlen(line);
@@ -305,6 +549,46 @@ static void refresh_input_line(const char *prompt, const char *line, size_t curs
         printf("\033[%zuD", length - cursor);
     }
     fflush(stdout);
+}
+
+static void complete_current_word(const char *prompt, char *line, size_t line_size,
+                                  size_t *length, size_t *cursor)
+{
+    struct completion_list list = {{0}, 0};
+    char word[MAX_INPUT];
+    char common[MAX_INPUT];
+    size_t word_start = current_word_start(line, *cursor);
+    size_t word_length = *cursor - word_start;
+
+    snprintf(word, sizeof(word), "%.*s", (int) word_length, line + word_start);
+
+    if (completing_command_word(line, word_start)) {
+        collect_command_completions(word, &list);
+    } else {
+        collect_path_completions(word, &list);
+    }
+
+    if (list.count == 1) {
+        char replacement[MAX_INPUT];
+        const char *match = list.items[0];
+        size_t match_length = strlen(match);
+
+        snprintf(replacement, sizeof(replacement), "%s%s",
+                 match,
+                 match_length > 0 && match[match_length - 1] != '/' ? " " : "");
+        replace_current_word(line, line_size, length, cursor, word_start, replacement);
+        refresh_input_line(prompt, line, *cursor);
+    } else if (list.count > 1) {
+        longest_common_prefix(&list, common, sizeof(common));
+        if (strlen(common) > word_length) {
+            replace_current_word(line, line_size, length, cursor, word_start, common);
+        } else {
+            print_completion_matches(&list);
+        }
+        refresh_input_line(prompt, line, *cursor);
+    }
+
+    free_completions(&list);
 }
 
 static int read_line_raw(const char *prompt, char *line, size_t line_size)
@@ -361,6 +645,11 @@ static int read_line_raw(const char *prompt, char *line, size_t line_size)
                 length--;
                 refresh_input_line(prompt, line, cursor);
             }
+            continue;
+        }
+
+        if (ch == '\t') {
+            complete_current_word(prompt, line, line_size, &length, &cursor);
             continue;
         }
 
