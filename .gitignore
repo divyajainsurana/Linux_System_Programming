@@ -1,0 +1,7 @@
+*.o
+.DS_Store
+busybox_shell/busybox_shell
+busybox_shell/test_home/
+busybox_shell/test_pkg_src/
+busybox_shell/test_pkg.tar.gz
+busybox_shell/test_*.tmp
