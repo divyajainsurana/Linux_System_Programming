@@ -7,6 +7,7 @@
 
 #include "cmd_spec.h"
 #include "cmd_du.h"
+#include "json_utils.h"
 
 static unsigned long long blocks_to_kb(unsigned long long blocks)
 {
@@ -77,11 +78,17 @@ int du_run(int argc, char **argv)
 {
     int index = 1;
     int status = 0;
+    int json = 0;
 
     if (argc > 1 &&
         (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0)) {
         du_print_usage(stdout);
         return 0;
+    }
+
+    if (argc > 1 && strcmp(argv[1], "--json") == 0) {
+        json = 1;
+        index = 2;
     }
 
     if (index == argc) {
@@ -90,10 +97,17 @@ int du_run(int argc, char **argv)
         if (disk_usage(".", &blocks) != 0) {
             return 1;
         }
-        printf("%llu\t.\n", blocks_to_kb(blocks));
+        if (json) {
+            printf("{\"paths\":[{\"path\":\".\",\"kilobytes\":%llu}]}\n", blocks_to_kb(blocks));
+        } else {
+            printf("%llu\t.\n", blocks_to_kb(blocks));
+        }
         return 0;
     }
 
+    if (json) {
+        printf("{\"paths\":[");
+    }
     for (; index < argc; index++) {
         unsigned long long blocks = 0;
 
@@ -101,7 +115,19 @@ int du_run(int argc, char **argv)
             status = 1;
             continue;
         }
-        printf("%llu\t%s\n", blocks_to_kb(blocks), argv[index]);
+        if (json) {
+            if (index > (argc > 1 && strcmp(argv[1], "--json") == 0 ? 2 : 1)) {
+                putchar(',');
+            }
+            printf("{\"path\":");
+            json_print_string(stdout, argv[index]);
+            printf(",\"kilobytes\":%llu}", blocks_to_kb(blocks));
+        } else {
+            printf("%llu\t%s\n", blocks_to_kb(blocks), argv[index]);
+        }
+    }
+    if (json) {
+        printf("]}\n");
     }
 
     return status;
@@ -109,11 +135,12 @@ int du_run(int argc, char **argv)
 
 void du_print_usage(FILE *out)
 {
-    fprintf(out, "Usage: du [PATH...]\n");
+    fprintf(out, "Usage: du [--json] [PATH...]\n");
     fprintf(out, "\nDescription:\n");
     fprintf(out, "  Show disk usage in kilobytes.\n");
     fprintf(out, "\nOptions:\n");
     fprintf(out, "  %-20s %s\n", "-h, --help", "show help and exit");
+    fprintf(out, "  %-20s %s\n", "--json", "output in JSON format");
 }
 
 cmd_spec_t cmd_du_spec = {

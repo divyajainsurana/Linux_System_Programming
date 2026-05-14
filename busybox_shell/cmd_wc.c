@@ -6,6 +6,7 @@
 #include "argtable3/src/argtable3.h"
 #include "cmd_spec.h"
 #include "cmd_wc.h"
+#include "json_utils.h"
 
 struct wc_counts {
     unsigned long long lines;
@@ -17,9 +18,10 @@ static struct arg_lit *wc_help_flag;
 static struct arg_lit *wc_lines_flag;
 static struct arg_lit *wc_words_flag;
 static struct arg_lit *wc_bytes_flag;
+static struct arg_lit *wc_json_flag;
 static struct arg_file *wc_files;
 static struct arg_end *wc_end;
-static void *wc_argtable[7];
+static void *wc_argtable[8];
 
 static void build_wc_argtable(int max_files)
 {
@@ -27,6 +29,7 @@ static void build_wc_argtable(int max_files)
     wc_lines_flag = arg_lit0("l", "lines", "print line count");
     wc_words_flag = arg_lit0("w", "words", "print word count");
     wc_bytes_flag = arg_lit0("c", "bytes", "print byte count");
+    wc_json_flag = arg_lit0(NULL, "json", "output in JSON format");
     wc_files = arg_filen(NULL, NULL, "[FILE...]", 0, max_files, "files to count");
     wc_end = arg_end(20);
 
@@ -34,9 +37,10 @@ static void build_wc_argtable(int max_files)
     wc_argtable[1] = wc_lines_flag;
     wc_argtable[2] = wc_words_flag;
     wc_argtable[3] = wc_bytes_flag;
-    wc_argtable[4] = wc_files;
-    wc_argtable[5] = wc_end;
-    wc_argtable[6] = NULL;
+    wc_argtable[4] = wc_json_flag;
+    wc_argtable[5] = wc_files;
+    wc_argtable[6] = wc_end;
+    wc_argtable[7] = NULL;
 }
 
 static int count_stream(FILE *in, const char *name, struct wc_counts *counts)
@@ -69,6 +73,19 @@ static int count_stream(FILE *in, const char *name, struct wc_counts *counts)
     }
 
     return 0;
+}
+
+static void print_counts_json(const struct wc_counts *counts, const char *label)
+{
+    printf("{\"lines\":%llu,\"words\":%llu,\"bytes\":%llu",
+           counts->lines,
+           counts->words,
+           counts->bytes);
+    if (label != NULL) {
+        printf(",\"path\":");
+        json_print_string(stdout, label);
+    }
+    printf("}");
 }
 
 static int count_file(const char *path, struct wc_counts *counts)
@@ -140,14 +157,14 @@ int wc_run(int argc, char **argv)
 
     if (wc_help_flag->count > 0) {
         wc_print_usage(stdout);
-        arg_freetable(wc_argtable, 6);
+        arg_freetable(wc_argtable, 7);
         return 0;
     }
 
     if (nerrors > 0) {
         arg_print_errors(stderr, wc_end, "wc");
         wc_print_usage(stderr);
-        arg_freetable(wc_argtable, 6);
+        arg_freetable(wc_argtable, 7);
         return 1;
     }
 
@@ -164,9 +181,18 @@ int wc_run(int argc, char **argv)
     if (wc_files->count == 0) {
         status = count_stream(stdin, "standard input", &counts);
         if (status == 0) {
-            print_counts(&counts, NULL, show_lines, show_words, show_bytes);
+            if (wc_json_flag->count > 0) {
+                printf("{\"files\":[");
+                print_counts_json(&counts, NULL);
+                printf("]}\n");
+            } else {
+                print_counts(&counts, NULL, show_lines, show_words, show_bytes);
+            }
         }
     } else {
+        if (wc_json_flag->count > 0) {
+            printf("{\"files\":[");
+        }
         for (index = 0; index < wc_files->count; index++) {
             if (count_file(wc_files->filename[index], &counts) != 0) {
                 status = 1;
@@ -176,15 +202,29 @@ int wc_run(int argc, char **argv)
             total.lines += counts.lines;
             total.words += counts.words;
             total.bytes += counts.bytes;
-            print_counts(&counts, wc_files->filename[index], show_lines, show_words, show_bytes);
+            if (wc_json_flag->count > 0) {
+                if (index > 0) {
+                    putchar(',');
+                }
+                print_counts_json(&counts, wc_files->filename[index]);
+            } else {
+                print_counts(&counts, wc_files->filename[index], show_lines, show_words, show_bytes);
+            }
         }
 
-        if (wc_files->count > 1) {
+        if (wc_json_flag->count > 0) {
+            printf("]");
+            if (wc_files->count > 1) {
+                printf(",\"total\":");
+                print_counts_json(&total, NULL);
+            }
+            printf("}\n");
+        } else if (wc_files->count > 1) {
             print_counts(&total, "total", show_lines, show_words, show_bytes);
         }
     }
 
-    arg_freetable(wc_argtable, 6);
+    arg_freetable(wc_argtable, 7);
     return status;
 }
 
@@ -201,7 +241,7 @@ void wc_print_usage(FILE *out)
     fprintf(out, "\nOptions:\n");
     arg_print_glossary(out, wc_argtable, "  %-20s %s\n");
 
-    arg_freetable(wc_argtable, 6);
+    arg_freetable(wc_argtable, 7);
 }
 
 cmd_spec_t cmd_wc_spec = {

@@ -7,34 +7,38 @@
 #include "argtable3/src/argtable3.h"
 #include "cmd_spec.h"
 #include "cmd_whoami.h"
+#include "json_utils.h"
 
 int whoami_run(int argc, char **argv)
 {
     struct arg_lit *help;
+    struct arg_lit *json;
     struct arg_end *end;
-    void *argtable[3];
+    void *argtable[4];
     struct passwd *user_info;
     int nerrors;
 
     help = arg_lit0("h", "help", "show help and exit");
+    json = arg_lit0(NULL, "json", "output in JSON format");
     end = arg_end(20);
 
     argtable[0] = help;
-    argtable[1] = end;
-    argtable[2] = NULL;
+    argtable[1] = json;
+    argtable[2] = end;
+    argtable[3] = NULL;
 
     nerrors = arg_parse(argc, argv, argtable);
 
     if (help->count > 0) {
         whoami_print_usage(stdout);
-        arg_freetable(argtable, 2);
+        arg_freetable(argtable, 3);
         return 0;
     }
 
     if (nerrors > 0) {
         arg_print_errors(stderr, end, "whoami");
         whoami_print_usage(stderr);
-        arg_freetable(argtable, 2);
+        arg_freetable(argtable, 3);
         return 1;
     }
 
@@ -46,28 +50,37 @@ int whoami_run(int argc, char **argv)
         } else {
             fprintf(stderr, "whoami: cannot find username for current user\n");
         }
-        arg_freetable(argtable, 2);
+        arg_freetable(argtable, 3);
         return 1;
     }
 
-    printf("%s\n", user_info->pw_name);
+    if (json->count > 0) {
+        printf("{\"username\":");
+        json_print_string(stdout, user_info->pw_name);
+        printf("}\n");
+    } else {
+        printf("%s\n", user_info->pw_name);
+    }
 
-    arg_freetable(argtable, 2);
+    arg_freetable(argtable, 3);
     return 0;
 }
 
 void whoami_print_usage(FILE *out)
 {
     struct arg_lit *help;
+    struct arg_lit *json;
     struct arg_end *end;
-    void *argtable[3];
+    void *argtable[4];
 
     help = arg_lit0("h", "help", "show help and exit");
+    json = arg_lit0(NULL, "json", "output in JSON format");
     end = arg_end(20);
 
     argtable[0] = help;
-    argtable[1] = end;
-    argtable[2] = NULL;
+    argtable[1] = json;
+    argtable[2] = end;
+    argtable[3] = NULL;
 
     fprintf(out, "Usage: whoami ");
     arg_print_syntax(out, argtable, "\n");
@@ -78,7 +91,7 @@ void whoami_print_usage(FILE *out)
     fprintf(out, "\nOptions:\n");
     arg_print_glossary(out, argtable, "  %-20s %s\n");
 
-    arg_freetable(argtable, 2);
+    arg_freetable(argtable, 3);
 }
 
 cmd_spec_t cmd_whoami_spec = {

@@ -1,11 +1,18 @@
 #include <stdio.h>
 #include <string.h>
 #include "cmd_spec.h"
+#include "json_utils.h"
 
 #define MAX_INPUT 1024
 #define MAX_ARGS 64
+#define SHELL_NAME "busybox_shell"
+#define SHELL_VERSION "1.0.0"
 
 void register_all_builtin_commands(void);
+
+struct json_command_list_state {
+    int first;
+};
 
 static void print_command_summary(const cmd_spec_t *spec, void *userdata)
 {
@@ -23,6 +30,125 @@ static void print_shell_help(FILE *out)
 
     fprintf(out, "\nRegistered commands:\n");
     for_each_command(print_command_summary, out);
+
+    fprintf(out, "\nCommon features:\n");
+    fprintf(out, "  %-20s %s\n", "--version", "show shell version");
+    fprintf(out, "  %-20s %s\n", "help --json", "list commands in JSON format");
+    fprintf(out, "  %-20s %s\n", "help <command> --json", "show command help metadata as JSON");
+}
+
+static void print_common_command_options(FILE *out)
+{
+    fprintf(out, "\nCommon options:\n");
+    fprintf(out, "  %-20s %s\n", "--version", "show command version and exit");
+    fprintf(out, "  %-20s %s\n", "--version --json", "show command version as JSON");
+    fprintf(out, "  %-20s %s\n", "-h, --help --json", "show command help metadata as JSON");
+}
+
+static int has_arg(int argc, char **argv, const char *short_arg, const char *long_arg)
+{
+    int index;
+
+    for (index = 0; index < argc; index++) {
+        if ((short_arg != NULL && strcmp(argv[index], short_arg) == 0) ||
+            (long_arg != NULL && strcmp(argv[index], long_arg) == 0)) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+static void print_command_help_json(const cmd_spec_t *spec)
+{
+    printf("{\"name\":");
+    json_print_string(stdout, spec->name);
+    printf(",\"summary\":");
+    json_print_string(stdout, spec->summary != NULL ? spec->summary : "");
+    printf(",\"description\":");
+    json_print_string(stdout, spec->long_help != NULL ? spec->long_help : "");
+    printf(",\"help\":[");
+    json_print_string(stdout, "help <command>");
+    printf(",");
+    json_print_string(stdout, "<command> -h");
+    printf(",");
+    json_print_string(stdout, "<command> --help");
+    printf(",");
+    json_print_string(stdout, "<command> --version");
+    printf("]}\n");
+}
+
+static void print_command_version(const cmd_spec_t *spec, int json)
+{
+    if (json) {
+        printf("{\"name\":");
+        json_print_string(stdout, spec->name);
+        printf(",\"package\":");
+        json_print_string(stdout, SHELL_NAME);
+        printf(",\"version\":");
+        json_print_string(stdout, SHELL_VERSION);
+        printf("}\n");
+    } else {
+        printf("%s (%s) %s\n", spec->name, SHELL_NAME, SHELL_VERSION);
+    }
+}
+
+static void print_shell_version(int json)
+{
+    if (json) {
+        printf("{\"name\":");
+        json_print_string(stdout, SHELL_NAME);
+        printf(",\"version\":");
+        json_print_string(stdout, SHELL_VERSION);
+        printf("}\n");
+    } else {
+        printf("%s %s\n", SHELL_NAME, SHELL_VERSION);
+    }
+}
+
+static void print_command_summary_json(const cmd_spec_t *spec, void *userdata)
+{
+    struct json_command_list_state *state = userdata;
+
+    if (!state->first) {
+        putchar(',');
+    }
+
+    printf("{\"name\":");
+    json_print_string(stdout, spec->name);
+    printf(",\"summary\":");
+    json_print_string(stdout, spec->summary != NULL ? spec->summary : "");
+    printf("}");
+
+    state->first = 0;
+}
+
+static void print_shell_help_json(void)
+{
+    struct json_command_list_state state = {1};
+
+    printf("{\"builtins\":[");
+    printf("{\"name\":\"help\",\"summary\":\"show this help, or help for a command\"},");
+    printf("{\"name\":\"exit\",\"summary\":\"exit the shell\"},");
+    printf("{\"name\":\"quit\",\"summary\":\"exit the shell\"}");
+    printf("],\"commands\":[");
+    for_each_command(print_command_summary_json, &state);
+    printf("]}\n");
+}
+
+static const char *first_non_flag_after_help(int argc, char **argv)
+{
+    int index;
+
+    for (index = 1; index < argc; index++) {
+        if (strcmp(argv[index], "--json") != 0 &&
+            strcmp(argv[index], "-h") != 0 &&
+            strcmp(argv[index], "--help") != 0) {
+            return argv[index];
+        }
+    }
+
+    return NULL;
 }
 
 static int split_line(char *line, char **argv, int max_args)
@@ -51,19 +177,36 @@ static int dispatch_command(int argc, char **argv)
         return -1;
     }
 
+    if (strcmp(argv[0], "--version") == 0 || strcmp(argv[0], "version") == 0) {
+        print_shell_version(has_arg(argc, argv, NULL, "--json"));
+        return 0;
+    }
+
     if (strcmp(argv[0], "help") == 0) {
-        if (argc == 1) {
-            print_shell_help(stdout);
+        int json = has_arg(argc, argv, NULL, "--json");
+        const char *command_name = first_non_flag_after_help(argc, argv);
+
+        if (command_name == NULL) {
+            if (json) {
+                print_shell_help_json();
+            } else {
+                print_shell_help(stdout);
+            }
             return 0;
         }
 
-        cmd = find_command(argv[1]);
+        cmd = find_command(command_name);
         if (cmd == NULL) {
-            fprintf(stderr, "Unknown command: %s\n", argv[1]);
+            fprintf(stderr, "Unknown command: %s\n", command_name);
             return 1;
         }
 
-        cmd->print_usage(stdout);
+        if (json) {
+            print_command_help_json(cmd);
+        } else {
+            cmd->print_usage(stdout);
+            print_common_command_options(stdout);
+        }
         return 0;
     }
 
@@ -72,6 +215,21 @@ static int dispatch_command(int argc, char **argv)
     if (!cmd) {
         fprintf(stderr, "Unknown command: %s\n", argv[0]);
         return 1;
+    }
+
+    if (has_arg(argc, argv, NULL, "--version")) {
+        print_command_version(cmd, has_arg(argc, argv, NULL, "--json"));
+        return 0;
+    }
+
+    if (has_arg(argc, argv, "-h", "--help")) {
+        if (has_arg(argc, argv, NULL, "--json")) {
+            print_command_help_json(cmd);
+        } else {
+            cmd->print_usage(stdout);
+            print_common_command_options(stdout);
+        }
+        return 0;
     }
 
     return cmd->run(argc, argv);

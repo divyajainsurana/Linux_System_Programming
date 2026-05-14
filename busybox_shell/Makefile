@@ -27,6 +27,7 @@ SRC = main.c \
       cmd_du.c \
       registry.c \
       register_all_commands.c \
+      json_utils.c \
       $(wildcard argtable3/src/*.c)
 
 all: $(TARGET)

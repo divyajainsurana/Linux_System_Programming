@@ -3,16 +3,17 @@
 
 #include "cmd_spec.h"
 #include "cmd_dirname.h"
+#include "json_utils.h"
 
-static void print_dirname(const char *path)
+static const char *dirname_value(const char *path, char *buffer, size_t buffer_size)
 {
     size_t len;
     size_t slash_index;
     size_t dir_len;
 
     if (path == NULL || path[0] == '\0') {
-        printf(".\n");
-        return;
+        snprintf(buffer, buffer_size, ".");
+        return buffer;
     }
 
     len = strlen(path);
@@ -26,8 +27,8 @@ static void print_dirname(const char *path)
     }
 
     if (slash_index == 0) {
-        printf(".\n");
-        return;
+        snprintf(buffer, buffer_size, ".");
+        return buffer;
     }
 
     dir_len = slash_index - 1;
@@ -36,16 +37,18 @@ static void print_dirname(const char *path)
     }
 
     if (dir_len == 0 && path[0] == '/') {
-        printf("/\n");
-        return;
+        snprintf(buffer, buffer_size, "/");
+        return buffer;
     }
 
-    printf("%.*s\n", (int)dir_len, path);
+    snprintf(buffer, buffer_size, "%.*s", (int)dir_len, path);
+    return buffer;
 }
 
 int dirname_run(int argc, char **argv)
 {
     int index;
+    int json = 0;
 
     if (argc > 1 &&
         (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0)) {
@@ -53,14 +56,37 @@ int dirname_run(int argc, char **argv)
         return 0;
     }
 
-    if (argc < 2) {
+    if (argc > 1 && strcmp(argv[1], "--json") == 0) {
+        json = 1;
+    }
+
+    if ((!json && argc < 2) || (json && argc < 3)) {
         fprintf(stderr, "dirname: missing operand\n");
         dirname_print_usage(stderr);
         return 1;
     }
 
+    if (json) {
+        printf("{\"paths\":[");
+        for (index = 2; index < argc; index++) {
+            char result[4096];
+
+            if (index > 2) {
+                putchar(',');
+            }
+            printf("{\"path\":");
+            json_print_string(stdout, argv[index]);
+            printf(",\"dirname\":");
+            json_print_string(stdout, dirname_value(argv[index], result, sizeof(result)));
+            printf("}");
+        }
+        printf("]}\n");
+        return 0;
+    }
+
     for (index = 1; index < argc; index++) {
-        print_dirname(argv[index]);
+        char result[4096];
+        printf("%s\n", dirname_value(argv[index], result, sizeof(result)));
     }
 
     return 0;
@@ -68,11 +94,12 @@ int dirname_run(int argc, char **argv)
 
 void dirname_print_usage(FILE *out)
 {
-    fprintf(out, "Usage: dirname PATH...\n");
+    fprintf(out, "Usage: dirname [--json] PATH...\n");
     fprintf(out, "\nDescription:\n");
     fprintf(out, "  Print the directory portion of each path.\n");
     fprintf(out, "\nOptions:\n");
     fprintf(out, "  %-20s %s\n", "-h, --help", "show help and exit");
+    fprintf(out, "  %-20s %s\n", "--json", "output in JSON format");
 }
 
 cmd_spec_t cmd_dirname_spec = {

@@ -82,17 +82,61 @@ Every command supports help through either:
 ./busybox_shell help <command>
 ```
 
+Every registered command also supports version output:
+
+```sh
+./busybox_shell <command> --version
+./busybox_shell <command> --version --json
+```
+
+Shell-level version output is available with:
+
+```sh
+./busybox_shell --version
+./busybox_shell --version --json
+```
+
+Command help includes these shared features too:
+
+```sh
+./busybox_shell help ls
+./busybox_shell ls -h
+```
+
+Both show the command-specific options plus a common options section for
+`--version`, `--version --json`, and JSON help.
+
 ## JSON Support
 
-The commands with JSON output are:
+All built-in commands support `--json` output. Examples:
 
 ```sh
 ./busybox_shell ls --json
 ./busybox_shell pkg --json
+./busybox_shell id --json
+./busybox_shell uname --json
+./busybox_shell wc --json README.md
+./busybox_shell cat --json README.md
+./busybox_shell head --json -n 5 README.md
+./busybox_shell tail --json -n 5 README.md
+./busybox_shell cp --json source.txt dest.txt
 ```
 
-`ls --json` prints directory entries as JSON objects. `pkg --json` prints
-metadata about the shell and the registered built-in commands.
+Data-oriented commands return their data as JSON fields. File-content commands
+such as `cat`, `head`, and `tail` wrap escaped file contents in JSON. Commands
+that mutate files, such as `cp`, `mv`, `rm`, `touch`, `mkdir`, and `rmdir`,
+return a success/status object when `--json` is provided.
+
+Help can also be returned as JSON:
+
+```sh
+./busybox_shell help --json
+./busybox_shell help ls --json
+./busybox_shell ls -h --json
+```
+
+`help --json` lists shell built-ins and registered commands. `help <command>
+--json` and `<command> -h --json` return JSON metadata for a single command.
 
 ## Package Manager
 
@@ -186,18 +230,43 @@ directory.
 ```sh
 ./busybox_shell localdate
 ./busybox_shell ls -a
+./busybox_shell ls -l
+./busybox_shell ls -R tmp
+./busybox_shell ls -S
+./busybox_shell ls -t
+./busybox_shell ls -r
+./busybox_shell ls --color
 ./busybox_shell cat README.md
+./busybox_shell cat -n README.md
+./busybox_shell cat -b README.md
+./busybox_shell cat -s README.md
+./busybox_shell cat -E README.md
 ./busybox_shell pwd
+./busybox_shell pwd -L
+./busybox_shell pwd -P
 ./busybox_shell wc README.md
 ./busybox_shell touch notes.txt
+./busybox_shell touch -c maybe-missing.txt
+./busybox_shell touch -v notes.txt
+./busybox_shell touch -t 202501010000 notes.txt
 ./busybox_shell mkdir -p tmp/demo
+./busybox_shell mkdir -v tmp/demo2
+./busybox_shell mkdir -m 700 private-dir
+./busybox_shell mkdir --dry-run tmp/planned
 ./busybox_shell rmdir tmp/demo
 ./busybox_shell echo hello world
+./busybox_shell echo -e 'hello\nworld'
+./busybox_shell echo -E 'hello\nworld'
 ./busybox_shell whoami
 ./busybox_shell id
 ./busybox_shell uname -a
 ./busybox_shell head -n 5 README.md
+./busybox_shell head -c 40 README.md
+./busybox_shell head -v -n 5 README.md
 ./busybox_shell tail -n 5 README.md
+./busybox_shell tail -c 40 README.md
+./busybox_shell tail -v -n 5 README.md
+./busybox_shell tail -f log.txt
 ./busybox_shell dirname a/b/c
 ./busybox_shell du README.md
 ```

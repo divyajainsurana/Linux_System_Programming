@@ -4,13 +4,22 @@
 
 #include "cmd_spec.h"
 #include "cmd_mv.h"
+#include "json_utils.h"
 
 int mv_run(int argc, char **argv)
 {
+    int json = 0;
+
     if (argc > 1 &&
         (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0)) {
         mv_print_usage(stdout);
         return 0;
+    }
+
+    if (argc > 1 && strcmp(argv[1], "--json") == 0) {
+        json = 1;
+        argv++;
+        argc--;
     }
 
     if (argc != 3) {
@@ -24,16 +33,25 @@ int mv_run(int argc, char **argv)
         return 1;
     }
 
+    if (json) {
+        printf("{\"command\":\"mv\",\"source\":");
+        json_print_string(stdout, argv[1]);
+        printf(",\"destination\":");
+        json_print_string(stdout, argv[2]);
+        printf(",\"moved\":true}\n");
+    }
+
     return 0;
 }
 
 void mv_print_usage(FILE *out)
 {
-    fprintf(out, "Usage: mv SOURCE DEST\n");
+    fprintf(out, "Usage: mv [--json] SOURCE DEST\n");
     fprintf(out, "\nDescription:\n");
     fprintf(out, "  Rename or move SOURCE to DEST.\n");
     fprintf(out, "\nOptions:\n");
     fprintf(out, "  %-20s %s\n", "-h, --help", "show help and exit");
+    fprintf(out, "  %-20s %s\n", "--json", "output in JSON format");
 }
 
 cmd_spec_t cmd_mv_spec = {

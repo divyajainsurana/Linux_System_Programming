@@ -4,6 +4,7 @@
 
 #include "cmd_spec.h"
 #include "cmd_cp.h"
+#include "json_utils.h"
 
 static int copy_file(const char *source, const char *destination)
 {
@@ -53,10 +54,18 @@ static int copy_file(const char *source, const char *destination)
 
 int cp_run(int argc, char **argv)
 {
+    int json = 0;
+
     if (argc > 1 &&
         (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0)) {
         cp_print_usage(stdout);
         return 0;
+    }
+
+    if (argc > 1 && strcmp(argv[1], "--json") == 0) {
+        json = 1;
+        argv++;
+        argc--;
     }
 
     if (argc != 3) {
@@ -65,16 +74,29 @@ int cp_run(int argc, char **argv)
         return 1;
     }
 
-    return copy_file(argv[1], argv[2]);
+    if (copy_file(argv[1], argv[2]) != 0) {
+        return 1;
+    }
+
+    if (json) {
+        printf("{\"command\":\"cp\",\"source\":");
+        json_print_string(stdout, argv[1]);
+        printf(",\"destination\":");
+        json_print_string(stdout, argv[2]);
+        printf(",\"copied\":true}\n");
+    }
+
+    return 0;
 }
 
 void cp_print_usage(FILE *out)
 {
-    fprintf(out, "Usage: cp SOURCE DEST\n");
+    fprintf(out, "Usage: cp [--json] SOURCE DEST\n");
     fprintf(out, "\nDescription:\n");
     fprintf(out, "  Copy a file from SOURCE to DEST.\n");
     fprintf(out, "\nOptions:\n");
     fprintf(out, "  %-20s %s\n", "-h, --help", "show help and exit");
+    fprintf(out, "  %-20s %s\n", "--json", "output in JSON format");
 }
 
 cmd_spec_t cmd_cp_spec = {

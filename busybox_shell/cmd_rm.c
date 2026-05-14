@@ -5,12 +5,15 @@
 
 #include "cmd_spec.h"
 #include "cmd_rm.h"
+#include "json_utils.h"
 
 int rm_run(int argc, char **argv)
 {
     int force = 0;
     int index = 1;
     int status = 0;
+    int json = 0;
+    int printed = 0;
 
     while (index < argc) {
         if (strcmp(argv[index], "-h") == 0 || strcmp(argv[index], "--help") == 0) {
@@ -19,6 +22,11 @@ int rm_run(int argc, char **argv)
         }
         if (strcmp(argv[index], "-f") == 0 || strcmp(argv[index], "--force") == 0) {
             force = 1;
+            index++;
+            continue;
+        }
+        if (strcmp(argv[index], "--json") == 0) {
+            json = 1;
             index++;
             continue;
         }
@@ -31,9 +39,15 @@ int rm_run(int argc, char **argv)
             rm_print_usage(stderr);
             return 1;
         }
+        if (json) {
+            printf("{\"command\":\"rm\",\"removed\":[]}\n");
+        }
         return 0;
     }
 
+    if (json) {
+        printf("{\"command\":\"rm\",\"removed\":[");
+    }
     for (; index < argc; index++) {
         if (unlink(argv[index]) != 0) {
             if (force && errno == ENOENT) {
@@ -41,7 +55,16 @@ int rm_run(int argc, char **argv)
             }
             fprintf(stderr, "rm: %s: %s\n", argv[index], strerror(errno));
             status = 1;
+        } else if (json) {
+            if (printed) {
+                putchar(',');
+            }
+            json_print_string(stdout, argv[index]);
+            printed = 1;
         }
+    }
+    if (json) {
+        printf("],\"success\":%s}\n", status == 0 ? "true" : "false");
     }
 
     return status;
@@ -49,11 +72,12 @@ int rm_run(int argc, char **argv)
 
 void rm_print_usage(FILE *out)
 {
-    fprintf(out, "Usage: rm [-f] FILE...\n");
+    fprintf(out, "Usage: rm [--json] [-f] FILE...\n");
     fprintf(out, "\nDescription:\n");
     fprintf(out, "  Remove files.\n");
     fprintf(out, "\nOptions:\n");
     fprintf(out, "  %-20s %s\n", "-h, --help", "show help and exit");
+    fprintf(out, "  %-20s %s\n", "--json", "output in JSON format");
     fprintf(out, "  %-20s %s\n", "-f, --force", "ignore missing files");
 }
 

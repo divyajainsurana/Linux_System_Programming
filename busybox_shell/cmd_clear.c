@@ -6,9 +6,25 @@
 
 int clear_run(int argc, char **argv)
 {
+    int json = 0;
+
     if (argc > 1 &&
         (strcmp(argv[1], "-h") == 0 || strcmp(argv[1], "--help") == 0)) {
         clear_print_usage(stdout);
+        return 0;
+    }
+
+    if (argc > 1 && strcmp(argv[1], "--json") == 0) {
+        json = 1;
+    }
+
+    if (json) {
+        if (argc > 2) {
+            fprintf(stderr, "clear: too many arguments\n");
+            clear_print_usage(stderr);
+            return 1;
+        }
+        printf("{\"command\":\"clear\",\"cleared\":true}\n");
         return 0;
     }
 
@@ -24,11 +40,12 @@ int clear_run(int argc, char **argv)
 
 void clear_print_usage(FILE *out)
 {
-    fprintf(out, "Usage: clear [-h]\n");
+    fprintf(out, "Usage: clear [--json]\n");
     fprintf(out, "\nDescription:\n");
     fprintf(out, "  Clear the terminal screen.\n");
     fprintf(out, "\nOptions:\n");
     fprintf(out, "  %-20s %s\n", "-h, --help", "show help and exit");
+    fprintf(out, "  %-20s %s\n", "--json", "output in JSON format");
 }
 
 cmd_spec_t cmd_clear_spec = {

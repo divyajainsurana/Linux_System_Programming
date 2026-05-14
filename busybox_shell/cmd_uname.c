@@ -4,6 +4,7 @@
 
 #include "cmd_spec.h"
 #include "cmd_uname.h"
+#include "json_utils.h"
 
 static void print_field(const char *value, int *printed)
 {
@@ -24,6 +25,7 @@ int uname_run(int argc, char **argv)
     int show_machine = 0;
     int printed = 0;
     int index;
+    int json = 0;
 
     if (uname(&info) != 0) {
         perror("uname");
@@ -34,6 +36,8 @@ int uname_run(int argc, char **argv)
         if (strcmp(argv[index], "-h") == 0 || strcmp(argv[index], "--help") == 0) {
             uname_print_usage(stdout);
             return 0;
+        } else if (strcmp(argv[index], "--json") == 0) {
+            json = 1;
         } else if (strcmp(argv[index], "-a") == 0 || strcmp(argv[index], "--all") == 0) {
             show_sysname = 1;
             show_nodename = 1;
@@ -62,6 +66,21 @@ int uname_run(int argc, char **argv)
         show_sysname = 1;
     }
 
+    if (json) {
+        printf("{\"sysname\":");
+        json_print_string(stdout, info.sysname);
+        printf(",\"nodename\":");
+        json_print_string(stdout, info.nodename);
+        printf(",\"release\":");
+        json_print_string(stdout, info.release);
+        printf(",\"version\":");
+        json_print_string(stdout, info.version);
+        printf(",\"machine\":");
+        json_print_string(stdout, info.machine);
+        printf("}\n");
+        return 0;
+    }
+
     if (show_sysname) {
         print_field(info.sysname, &printed);
     }
@@ -84,11 +103,12 @@ int uname_run(int argc, char **argv)
 
 void uname_print_usage(FILE *out)
 {
-    fprintf(out, "Usage: uname [-a] [-s] [-n] [-r] [-v] [-m]\n");
+    fprintf(out, "Usage: uname [--json] [-a] [-s] [-n] [-r] [-v] [-m]\n");
     fprintf(out, "\nDescription:\n");
     fprintf(out, "  Print system information.\n");
     fprintf(out, "\nOptions:\n");
     fprintf(out, "  %-20s %s\n", "-h, --help", "show help and exit");
+    fprintf(out, "  %-20s %s\n", "--json", "output in JSON format");
     fprintf(out, "  %-20s %s\n", "-a, --all", "print all available information");
     fprintf(out, "  %-20s %s\n", "-s", "print kernel name");
     fprintf(out, "  %-20s %s\n", "-n", "print network node hostname");
