@@ -1,0 +1,402 @@
+{"prompt": "show help for ls", "completion": "ls -h", "source": "generic-help"}
+{"prompt": "how do I use ls", "completion": "ls -h", "source": "generic-help"}
+{"prompt": "show help for ls in json", "completion": "ls -h --json", "source": "json-help"}
+{"prompt": "explain ls as json", "completion": "ls -h --json", "source": "json-help"}
+{"prompt": "what is the version of ls", "completion": "ls --version", "source": "version"}
+{"prompt": "show ls version", "completion": "ls --version", "source": "version"}
+{"prompt": "what does -a do in ls", "completion": "ls -h --json", "source": "option-help"}
+{"prompt": "explain ls -a", "completion": "ls -h --json", "source": "option-help"}
+{"prompt": "show ls -a parameter in json", "completion": "ls -h --json", "source": "option-help"}
+{"prompt": "what does -l do in ls", "completion": "ls -h --json", "source": "option-help"}
+{"prompt": "explain ls -l", "completion": "ls -h --json", "source": "option-help"}
+{"prompt": "show ls -l parameter in json", "completion": "ls -h --json", "source": "option-help"}
+{"prompt": "what does -R do in ls", "completion": "ls -h --json", "source": "option-help"}
+{"prompt": "explain ls -R", "completion": "ls -h --json", "source": "option-help"}
+{"prompt": "show ls -R parameter in json", "completion": "ls -h --json", "source": "option-help"}
+{"prompt": "what does -S do in ls", "completion": "ls -h --json", "source": "option-help"}
+{"prompt": "explain ls -S", "completion": "ls -h --json", "source": "option-help"}
+{"prompt": "show ls -S parameter in json", "completion": "ls -h --json", "source": "option-help"}
+{"prompt": "what does -t do in ls", "completion": "ls -h --json", "source": "option-help"}
+{"prompt": "explain ls -t", "completion": "ls -h --json", "source": "option-help"}
+{"prompt": "show ls -t parameter in json", "completion": "ls -h --json", "source": "option-help"}
+{"prompt": "what does --color do in ls", "completion": "ls -h --json", "source": "option-help"}
+{"prompt": "explain ls --color", "completion": "ls -h --json", "source": "option-help"}
+{"prompt": "show ls --color parameter in json", "completion": "ls -h --json", "source": "option-help"}
+{"prompt": "what does --json do in ls", "completion": "ls -h --json", "source": "option-help"}
+{"prompt": "explain ls --json", "completion": "ls -h --json", "source": "option-help"}
+{"prompt": "show ls --json parameter in json", "completion": "ls -h --json", "source": "option-help"}
+{"prompt": "what does --version do in ls", "completion": "ls -h --json", "source": "option-help"}
+{"prompt": "explain ls --version", "completion": "ls -h --json", "source": "option-help"}
+{"prompt": "show ls --version parameter in json", "completion": "ls -h --json", "source": "option-help"}
+{"prompt": "show help for localdate", "completion": "localdate -h", "source": "generic-help"}
+{"prompt": "how do I use localdate", "completion": "localdate -h", "source": "generic-help"}
+{"prompt": "show help for localdate in json", "completion": "localdate -h --json", "source": "json-help"}
+{"prompt": "explain localdate as json", "completion": "localdate -h --json", "source": "json-help"}
+{"prompt": "what is the version of localdate", "completion": "localdate --version", "source": "version"}
+{"prompt": "show localdate version", "completion": "localdate --version", "source": "version"}
+{"prompt": "what does --json do in localdate", "completion": "localdate -h --json", "source": "option-help"}
+{"prompt": "explain localdate --json", "completion": "localdate -h --json", "source": "option-help"}
+{"prompt": "show localdate --json parameter in json", "completion": "localdate -h --json", "source": "option-help"}
+{"prompt": "what does --version do in localdate", "completion": "localdate -h --json", "source": "option-help"}
+{"prompt": "explain localdate --version", "completion": "localdate -h --json", "source": "option-help"}
+{"prompt": "show localdate --version parameter in json", "completion": "localdate -h --json", "source": "option-help"}
+{"prompt": "show help for cat", "completion": "cat -h", "source": "generic-help"}
+{"prompt": "how do I use cat", "completion": "cat -h", "source": "generic-help"}
+{"prompt": "show help for cat in json", "completion": "cat -h --json", "source": "json-help"}
+{"prompt": "explain cat as json", "completion": "cat -h --json", "source": "json-help"}
+{"prompt": "what is the version of cat", "completion": "cat --version", "source": "version"}
+{"prompt": "show cat version", "completion": "cat --version", "source": "version"}
+{"prompt": "what does -n do in cat", "completion": "cat -h --json", "source": "option-help"}
+{"prompt": "explain cat -n", "completion": "cat -h --json", "source": "option-help"}
+{"prompt": "show cat -n parameter in json", "completion": "cat -h --json", "source": "option-help"}
+{"prompt": "what does -b do in cat", "completion": "cat -h --json", "source": "option-help"}
+{"prompt": "explain cat -b", "completion": "cat -h --json", "source": "option-help"}
+{"prompt": "show cat -b parameter in json", "completion": "cat -h --json", "source": "option-help"}
+{"prompt": "what does -s do in cat", "completion": "cat -h --json", "source": "option-help"}
+{"prompt": "explain cat -s", "completion": "cat -h --json", "source": "option-help"}
+{"prompt": "show cat -s parameter in json", "completion": "cat -h --json", "source": "option-help"}
+{"prompt": "what does -E do in cat", "completion": "cat -h --json", "source": "option-help"}
+{"prompt": "explain cat -E", "completion": "cat -h --json", "source": "option-help"}
+{"prompt": "show cat -E parameter in json", "completion": "cat -h --json", "source": "option-help"}
+{"prompt": "what does --json do in cat", "completion": "cat -h --json", "source": "option-help"}
+{"prompt": "explain cat --json", "completion": "cat -h --json", "source": "option-help"}
+{"prompt": "show cat --json parameter in json", "completion": "cat -h --json", "source": "option-help"}
+{"prompt": "what does --version do in cat", "completion": "cat -h --json", "source": "option-help"}
+{"prompt": "explain cat --version", "completion": "cat -h --json", "source": "option-help"}
+{"prompt": "show cat --version parameter in json", "completion": "cat -h --json", "source": "option-help"}
+{"prompt": "show help for pkg", "completion": "pkg -h", "source": "generic-help"}
+{"prompt": "how do I use pkg", "completion": "pkg -h", "source": "generic-help"}
+{"prompt": "show help for pkg in json", "completion": "pkg -h --json", "source": "json-help"}
+{"prompt": "explain pkg as json", "completion": "pkg -h --json", "source": "json-help"}
+{"prompt": "what is the version of pkg", "completion": "pkg --version", "source": "version"}
+{"prompt": "show pkg version", "completion": "pkg --version", "source": "version"}
+{"prompt": "what does --json do in pkg", "completion": "pkg -h --json", "source": "option-help"}
+{"prompt": "explain pkg --json", "completion": "pkg -h --json", "source": "option-help"}
+{"prompt": "show pkg --json parameter in json", "completion": "pkg -h --json", "source": "option-help"}
+{"prompt": "what does --version do in pkg", "completion": "pkg -h --json", "source": "option-help"}
+{"prompt": "explain pkg --version", "completion": "pkg -h --json", "source": "option-help"}
+{"prompt": "show pkg --version parameter in json", "completion": "pkg -h --json", "source": "option-help"}
+{"prompt": "show help for pwd", "completion": "pwd -h", "source": "generic-help"}
+{"prompt": "how do I use pwd", "completion": "pwd -h", "source": "generic-help"}
+{"prompt": "show help for pwd in json", "completion": "pwd -h --json", "source": "json-help"}
+{"prompt": "explain pwd as json", "completion": "pwd -h --json", "source": "json-help"}
+{"prompt": "what is the version of pwd", "completion": "pwd --version", "source": "version"}
+{"prompt": "show pwd version", "completion": "pwd --version", "source": "version"}
+{"prompt": "what does --json do in pwd", "completion": "pwd -h --json", "source": "option-help"}
+{"prompt": "explain pwd --json", "completion": "pwd -h --json", "source": "option-help"}
+{"prompt": "show pwd --json parameter in json", "completion": "pwd -h --json", "source": "option-help"}
+{"prompt": "what does -L do in pwd", "completion": "pwd -h --json", "source": "option-help"}
+{"prompt": "explain pwd -L", "completion": "pwd -h --json", "source": "option-help"}
+{"prompt": "show pwd -L parameter in json", "completion": "pwd -h --json", "source": "option-help"}
+{"prompt": "what does -P do in pwd", "completion": "pwd -h --json", "source": "option-help"}
+{"prompt": "explain pwd -P", "completion": "pwd -h --json", "source": "option-help"}
+{"prompt": "show pwd -P parameter in json", "completion": "pwd -h --json", "source": "option-help"}
+{"prompt": "what does --version do in pwd", "completion": "pwd -h --json", "source": "option-help"}
+{"prompt": "explain pwd --version", "completion": "pwd -h --json", "source": "option-help"}
+{"prompt": "show pwd --version parameter in json", "completion": "pwd -h --json", "source": "option-help"}
+{"prompt": "show help for wc", "completion": "wc -h", "source": "generic-help"}
+{"prompt": "how do I use wc", "completion": "wc -h", "source": "generic-help"}
+{"prompt": "show help for wc in json", "completion": "wc -h --json", "source": "json-help"}
+{"prompt": "explain wc as json", "completion": "wc -h --json", "source": "json-help"}
+{"prompt": "what is the version of wc", "completion": "wc --version", "source": "version"}
+{"prompt": "show wc version", "completion": "wc --version", "source": "version"}
+{"prompt": "what does -l do in wc", "completion": "wc -h --json", "source": "option-help"}
+{"prompt": "explain wc -l", "completion": "wc -h --json", "source": "option-help"}
+{"prompt": "show wc -l parameter in json", "completion": "wc -h --json", "source": "option-help"}
+{"prompt": "what does -w do in wc", "completion": "wc -h --json", "source": "option-help"}
+{"prompt": "explain wc -w", "completion": "wc -h --json", "source": "option-help"}
+{"prompt": "show wc -w parameter in json", "completion": "wc -h --json", "source": "option-help"}
+{"prompt": "what does -c do in wc", "completion": "wc -h --json", "source": "option-help"}
+{"prompt": "explain wc -c", "completion": "wc -h --json", "source": "option-help"}
+{"prompt": "show wc -c parameter in json", "completion": "wc -h --json", "source": "option-help"}
+{"prompt": "what does --json do in wc", "completion": "wc -h --json", "source": "option-help"}
+{"prompt": "explain wc --json", "completion": "wc -h --json", "source": "option-help"}
+{"prompt": "show wc --json parameter in json", "completion": "wc -h --json", "source": "option-help"}
+{"prompt": "what does --version do in wc", "completion": "wc -h --json", "source": "option-help"}
+{"prompt": "explain wc --version", "completion": "wc -h --json", "source": "option-help"}
+{"prompt": "show wc --version parameter in json", "completion": "wc -h --json", "source": "option-help"}
+{"prompt": "show help for touch", "completion": "touch -h", "source": "generic-help"}
+{"prompt": "how do I use touch", "completion": "touch -h", "source": "generic-help"}
+{"prompt": "show help for touch in json", "completion": "touch -h --json", "source": "json-help"}
+{"prompt": "explain touch as json", "completion": "touch -h --json", "source": "json-help"}
+{"prompt": "what is the version of touch", "completion": "touch --version", "source": "version"}
+{"prompt": "show touch version", "completion": "touch --version", "source": "version"}
+{"prompt": "what does --json do in touch", "completion": "touch -h --json", "source": "option-help"}
+{"prompt": "explain touch --json", "completion": "touch -h --json", "source": "option-help"}
+{"prompt": "show touch --json parameter in json", "completion": "touch -h --json", "source": "option-help"}
+{"prompt": "what does -c do in touch", "completion": "touch -h --json", "source": "option-help"}
+{"prompt": "explain touch -c", "completion": "touch -h --json", "source": "option-help"}
+{"prompt": "show touch -c parameter in json", "completion": "touch -h --json", "source": "option-help"}
+{"prompt": "what does -a do in touch", "completion": "touch -h --json", "source": "option-help"}
+{"prompt": "explain touch -a", "completion": "touch -h --json", "source": "option-help"}
+{"prompt": "show touch -a parameter in json", "completion": "touch -h --json", "source": "option-help"}
+{"prompt": "what does -m do in touch", "completion": "touch -h --json", "source": "option-help"}
+{"prompt": "explain touch -m", "completion": "touch -h --json", "source": "option-help"}
+{"prompt": "show touch -m parameter in json", "completion": "touch -h --json", "source": "option-help"}
+{"prompt": "what does -v do in touch", "completion": "touch -h --json", "source": "option-help"}
+{"prompt": "explain touch -v", "completion": "touch -h --json", "source": "option-help"}
+{"prompt": "show touch -v parameter in json", "completion": "touch -h --json", "source": "option-help"}
+{"prompt": "what does -t do in touch", "completion": "touch -h --json", "source": "option-help"}
+{"prompt": "explain touch -t", "completion": "touch -h --json", "source": "option-help"}
+{"prompt": "show touch -t parameter in json", "completion": "touch -h --json", "source": "option-help"}
+{"prompt": "what does --version do in touch", "completion": "touch -h --json", "source": "option-help"}
+{"prompt": "explain touch --version", "completion": "touch -h --json", "source": "option-help"}
+{"prompt": "show touch --version parameter in json", "completion": "touch -h --json", "source": "option-help"}
+{"prompt": "show help for mkdir", "completion": "mkdir -h", "source": "generic-help"}
+{"prompt": "how do I use mkdir", "completion": "mkdir -h", "source": "generic-help"}
+{"prompt": "show help for mkdir in json", "completion": "mkdir -h --json", "source": "json-help"}
+{"prompt": "explain mkdir as json", "completion": "mkdir -h --json", "source": "json-help"}
+{"prompt": "what is the version of mkdir", "completion": "mkdir --version", "source": "version"}
+{"prompt": "show mkdir version", "completion": "mkdir --version", "source": "version"}
+{"prompt": "what does --json do in mkdir", "completion": "mkdir -h --json", "source": "option-help"}
+{"prompt": "explain mkdir --json", "completion": "mkdir -h --json", "source": "option-help"}
+{"prompt": "show mkdir --json parameter in json", "completion": "mkdir -h --json", "source": "option-help"}
+{"prompt": "what does -p do in mkdir", "completion": "mkdir -h --json", "source": "option-help"}
+{"prompt": "explain mkdir -p", "completion": "mkdir -h --json", "source": "option-help"}
+{"prompt": "show mkdir -p parameter in json", "completion": "mkdir -h --json", "source": "option-help"}
+{"prompt": "what does -v do in mkdir", "completion": "mkdir -h --json", "source": "option-help"}
+{"prompt": "explain mkdir -v", "completion": "mkdir -h --json", "source": "option-help"}
+{"prompt": "show mkdir -v parameter in json", "completion": "mkdir -h --json", "source": "option-help"}
+{"prompt": "what does --dry-run do in mkdir", "completion": "mkdir -h --json", "source": "option-help"}
+{"prompt": "explain mkdir --dry-run", "completion": "mkdir -h --json", "source": "option-help"}
+{"prompt": "show mkdir --dry-run parameter in json", "completion": "mkdir -h --json", "source": "option-help"}
+{"prompt": "what does -m do in mkdir", "completion": "mkdir -h --json", "source": "option-help"}
+{"prompt": "explain mkdir -m", "completion": "mkdir -h --json", "source": "option-help"}
+{"prompt": "show mkdir -m parameter in json", "completion": "mkdir -h --json", "source": "option-help"}
+{"prompt": "what does --version do in mkdir", "completion": "mkdir -h --json", "source": "option-help"}
+{"prompt": "explain mkdir --version", "completion": "mkdir -h --json", "source": "option-help"}
+{"prompt": "show mkdir --version parameter in json", "completion": "mkdir -h --json", "source": "option-help"}
+{"prompt": "show help for rmdir", "completion": "rmdir -h", "source": "generic-help"}
+{"prompt": "how do I use rmdir", "completion": "rmdir -h", "source": "generic-help"}
+{"prompt": "show help for rmdir in json", "completion": "rmdir -h --json", "source": "json-help"}
+{"prompt": "explain rmdir as json", "completion": "rmdir -h --json", "source": "json-help"}
+{"prompt": "what is the version of rmdir", "completion": "rmdir --version", "source": "version"}
+{"prompt": "show rmdir version", "completion": "rmdir --version", "source": "version"}
+{"prompt": "what does --json do in rmdir", "completion": "rmdir -h --json", "source": "option-help"}
+{"prompt": "explain rmdir --json", "completion": "rmdir -h --json", "source": "option-help"}
+{"prompt": "show rmdir --json parameter in json", "completion": "rmdir -h --json", "source": "option-help"}
+{"prompt": "what does --version do in rmdir", "completion": "rmdir -h --json", "source": "option-help"}
+{"prompt": "explain rmdir --version", "completion": "rmdir -h --json", "source": "option-help"}
+{"prompt": "show rmdir --version parameter in json", "completion": "rmdir -h --json", "source": "option-help"}
+{"prompt": "show help for echo", "completion": "echo -h", "source": "generic-help"}
+{"prompt": "how do I use echo", "completion": "echo -h", "source": "generic-help"}
+{"prompt": "show help for echo in json", "completion": "echo -h --json", "source": "json-help"}
+{"prompt": "explain echo as json", "completion": "echo -h --json", "source": "json-help"}
+{"prompt": "what is the version of echo", "completion": "echo --version", "source": "version"}
+{"prompt": "show echo version", "completion": "echo --version", "source": "version"}
+{"prompt": "what does --json do in echo", "completion": "echo -h --json", "source": "option-help"}
+{"prompt": "explain echo --json", "completion": "echo -h --json", "source": "option-help"}
+{"prompt": "show echo --json parameter in json", "completion": "echo -h --json", "source": "option-help"}
+{"prompt": "what does -n do in echo", "completion": "echo -h --json", "source": "option-help"}
+{"prompt": "explain echo -n", "completion": "echo -h --json", "source": "option-help"}
+{"prompt": "show echo -n parameter in json", "completion": "echo -h --json", "source": "option-help"}
+{"prompt": "what does -e do in echo", "completion": "echo -h --json", "source": "option-help"}
+{"prompt": "explain echo -e", "completion": "echo -h --json", "source": "option-help"}
+{"prompt": "show echo -e parameter in json", "completion": "echo -h --json", "source": "option-help"}
+{"prompt": "what does --version do in echo", "completion": "echo -h --json", "source": "option-help"}
+{"prompt": "explain echo --version", "completion": "echo -h --json", "source": "option-help"}
+{"prompt": "show echo --version parameter in json", "completion": "echo -h --json", "source": "option-help"}
+{"prompt": "show help for whoami", "completion": "whoami -h", "source": "generic-help"}
+{"prompt": "how do I use whoami", "completion": "whoami -h", "source": "generic-help"}
+{"prompt": "show help for whoami in json", "completion": "whoami -h --json", "source": "json-help"}
+{"prompt": "explain whoami as json", "completion": "whoami -h --json", "source": "json-help"}
+{"prompt": "what is the version of whoami", "completion": "whoami --version", "source": "version"}
+{"prompt": "show whoami version", "completion": "whoami --version", "source": "version"}
+{"prompt": "what does --json do in whoami", "completion": "whoami -h --json", "source": "option-help"}
+{"prompt": "explain whoami --json", "completion": "whoami -h --json", "source": "option-help"}
+{"prompt": "show whoami --json parameter in json", "completion": "whoami -h --json", "source": "option-help"}
+{"prompt": "what does --version do in whoami", "completion": "whoami -h --json", "source": "option-help"}
+{"prompt": "explain whoami --version", "completion": "whoami -h --json", "source": "option-help"}
+{"prompt": "show whoami --version parameter in json", "completion": "whoami -h --json", "source": "option-help"}
+{"prompt": "show help for clear", "completion": "clear -h", "source": "generic-help"}
+{"prompt": "how do I use clear", "completion": "clear -h", "source": "generic-help"}
+{"prompt": "show help for clear in json", "completion": "clear -h --json", "source": "json-help"}
+{"prompt": "explain clear as json", "completion": "clear -h --json", "source": "json-help"}
+{"prompt": "what is the version of clear", "completion": "clear --version", "source": "version"}
+{"prompt": "show clear version", "completion": "clear --version", "source": "version"}
+{"prompt": "what does --json do in clear", "completion": "clear -h --json", "source": "option-help"}
+{"prompt": "explain clear --json", "completion": "clear -h --json", "source": "option-help"}
+{"prompt": "show clear --json parameter in json", "completion": "clear -h --json", "source": "option-help"}
+{"prompt": "what does --version do in clear", "completion": "clear -h --json", "source": "option-help"}
+{"prompt": "explain clear --version", "completion": "clear -h --json", "source": "option-help"}
+{"prompt": "show clear --version parameter in json", "completion": "clear -h --json", "source": "option-help"}
+{"prompt": "show help for id", "completion": "id -h", "source": "generic-help"}
+{"prompt": "how do I use id", "completion": "id -h", "source": "generic-help"}
+{"prompt": "show help for id in json", "completion": "id -h --json", "source": "json-help"}
+{"prompt": "explain id as json", "completion": "id -h --json", "source": "json-help"}
+{"prompt": "what is the version of id", "completion": "id --version", "source": "version"}
+{"prompt": "show id version", "completion": "id --version", "source": "version"}
+{"prompt": "what does --json do in id", "completion": "id -h --json", "source": "option-help"}
+{"prompt": "explain id --json", "completion": "id -h --json", "source": "option-help"}
+{"prompt": "show id --json parameter in json", "completion": "id -h --json", "source": "option-help"}
+{"prompt": "what does --version do in id", "completion": "id -h --json", "source": "option-help"}
+{"prompt": "explain id --version", "completion": "id -h --json", "source": "option-help"}
+{"prompt": "show id --version parameter in json", "completion": "id -h --json", "source": "option-help"}
+{"prompt": "show help for uname", "completion": "uname -h", "source": "generic-help"}
+{"prompt": "how do I use uname", "completion": "uname -h", "source": "generic-help"}
+{"prompt": "show help for uname in json", "completion": "uname -h --json", "source": "json-help"}
+{"prompt": "explain uname as json", "completion": "uname -h --json", "source": "json-help"}
+{"prompt": "what is the version of uname", "completion": "uname --version", "source": "version"}
+{"prompt": "show uname version", "completion": "uname --version", "source": "version"}
+{"prompt": "what does --json do in uname", "completion": "uname -h --json", "source": "option-help"}
+{"prompt": "explain uname --json", "completion": "uname -h --json", "source": "option-help"}
+{"prompt": "show uname --json parameter in json", "completion": "uname -h --json", "source": "option-help"}
+{"prompt": "what does -a do in uname", "completion": "uname -h --json", "source": "option-help"}
+{"prompt": "explain uname -a", "completion": "uname -h --json", "source": "option-help"}
+{"prompt": "show uname -a parameter in json", "completion": "uname -h --json", "source": "option-help"}
+{"prompt": "what does -s do in uname", "completion": "uname -h --json", "source": "option-help"}
+{"prompt": "explain uname -s", "completion": "uname -h --json", "source": "option-help"}
+{"prompt": "show uname -s parameter in json", "completion": "uname -h --json", "source": "option-help"}
+{"prompt": "what does -n do in uname", "completion": "uname -h --json", "source": "option-help"}
+{"prompt": "explain uname -n", "completion": "uname -h --json", "source": "option-help"}
+{"prompt": "show uname -n parameter in json", "completion": "uname -h --json", "source": "option-help"}
+{"prompt": "what does -r do in uname", "completion": "uname -h --json", "source": "option-help"}
+{"prompt": "explain uname -r", "completion": "uname -h --json", "source": "option-help"}
+{"prompt": "show uname -r parameter in json", "completion": "uname -h --json", "source": "option-help"}
+{"prompt": "what does -v do in uname", "completion": "uname -h --json", "source": "option-help"}
+{"prompt": "explain uname -v", "completion": "uname -h --json", "source": "option-help"}
+{"prompt": "show uname -v parameter in json", "completion": "uname -h --json", "source": "option-help"}
+{"prompt": "what does -m do in uname", "completion": "uname -h --json", "source": "option-help"}
+{"prompt": "explain uname -m", "completion": "uname -h --json", "source": "option-help"}
+{"prompt": "show uname -m parameter in json", "completion": "uname -h --json", "source": "option-help"}
+{"prompt": "what does --version do in uname", "completion": "uname -h --json", "source": "option-help"}
+{"prompt": "explain uname --version", "completion": "uname -h --json", "source": "option-help"}
+{"prompt": "show uname --version parameter in json", "completion": "uname -h --json", "source": "option-help"}
+{"prompt": "show help for head", "completion": "head -h", "source": "generic-help"}
+{"prompt": "how do I use head", "completion": "head -h", "source": "generic-help"}
+{"prompt": "show help for head in json", "completion": "head -h --json", "source": "json-help"}
+{"prompt": "explain head as json", "completion": "head -h --json", "source": "json-help"}
+{"prompt": "what is the version of head", "completion": "head --version", "source": "version"}
+{"prompt": "show head version", "completion": "head --version", "source": "version"}
+{"prompt": "what does --json do in head", "completion": "head -h --json", "source": "option-help"}
+{"prompt": "explain head --json", "completion": "head -h --json", "source": "option-help"}
+{"prompt": "show head --json parameter in json", "completion": "head -h --json", "source": "option-help"}
+{"prompt": "what does -n do in head", "completion": "head -h --json", "source": "option-help"}
+{"prompt": "explain head -n", "completion": "head -h --json", "source": "option-help"}
+{"prompt": "show head -n parameter in json", "completion": "head -h --json", "source": "option-help"}
+{"prompt": "what does -c do in head", "completion": "head -h --json", "source": "option-help"}
+{"prompt": "explain head -c", "completion": "head -h --json", "source": "option-help"}
+{"prompt": "show head -c parameter in json", "completion": "head -h --json", "source": "option-help"}
+{"prompt": "what does -q do in head", "completion": "head -h --json", "source": "option-help"}
+{"prompt": "explain head -q", "completion": "head -h --json", "source": "option-help"}
+{"prompt": "show head -q parameter in json", "completion": "head -h --json", "source": "option-help"}
+{"prompt": "what does -v do in head", "completion": "head -h --json", "source": "option-help"}
+{"prompt": "explain head -v", "completion": "head -h --json", "source": "option-help"}
+{"prompt": "show head -v parameter in json", "completion": "head -h --json", "source": "option-help"}
+{"prompt": "what does --version do in head", "completion": "head -h --json", "source": "option-help"}
+{"prompt": "explain head --version", "completion": "head -h --json", "source": "option-help"}
+{"prompt": "show head --version parameter in json", "completion": "head -h --json", "source": "option-help"}
+{"prompt": "show help for tail", "completion": "tail -h", "source": "generic-help"}
+{"prompt": "how do I use tail", "completion": "tail -h", "source": "generic-help"}
+{"prompt": "show help for tail in json", "completion": "tail -h --json", "source": "json-help"}
+{"prompt": "explain tail as json", "completion": "tail -h --json", "source": "json-help"}
+{"prompt": "what is the version of tail", "completion": "tail --version", "source": "version"}
+{"prompt": "show tail version", "completion": "tail --version", "source": "version"}
+{"prompt": "what does --json do in tail", "completion": "tail -h --json", "source": "option-help"}
+{"prompt": "explain tail --json", "completion": "tail -h --json", "source": "option-help"}
+{"prompt": "show tail --json parameter in json", "completion": "tail -h --json", "source": "option-help"}
+{"prompt": "what does -n do in tail", "completion": "tail -h --json", "source": "option-help"}
+{"prompt": "explain tail -n", "completion": "tail -h --json", "source": "option-help"}
+{"prompt": "show tail -n parameter in json", "completion": "tail -h --json", "source": "option-help"}
+{"prompt": "what does -c do in tail", "completion": "tail -h --json", "source": "option-help"}
+{"prompt": "explain tail -c", "completion": "tail -h --json", "source": "option-help"}
+{"prompt": "show tail -c parameter in json", "completion": "tail -h --json", "source": "option-help"}
+{"prompt": "what does -q do in tail", "completion": "tail -h --json", "source": "option-help"}
+{"prompt": "explain tail -q", "completion": "tail -h --json", "source": "option-help"}
+{"prompt": "show tail -q parameter in json", "completion": "tail -h --json", "source": "option-help"}
+{"prompt": "what does -v do in tail", "completion": "tail -h --json", "source": "option-help"}
+{"prompt": "explain tail -v", "completion": "tail -h --json", "source": "option-help"}
+{"prompt": "show tail -v parameter in json", "completion": "tail -h --json", "source": "option-help"}
+{"prompt": "what does -f do in tail", "completion": "tail -h --json", "source": "option-help"}
+{"prompt": "explain tail -f", "completion": "tail -h --json", "source": "option-help"}
+{"prompt": "show tail -f parameter in json", "completion": "tail -h --json", "source": "option-help"}
+{"prompt": "what does --version do in tail", "completion": "tail -h --json", "source": "option-help"}
+{"prompt": "explain tail --version", "completion": "tail -h --json", "source": "option-help"}
+{"prompt": "show tail --version parameter in json", "completion": "tail -h --json", "source": "option-help"}
+{"prompt": "show help for cp", "completion": "cp -h", "source": "generic-help"}
+{"prompt": "how do I use cp", "completion": "cp -h", "source": "generic-help"}
+{"prompt": "show help for cp in json", "completion": "cp -h --json", "source": "json-help"}
+{"prompt": "explain cp as json", "completion": "cp -h --json", "source": "json-help"}
+{"prompt": "what is the version of cp", "completion": "cp --version", "source": "version"}
+{"prompt": "show cp version", "completion": "cp --version", "source": "version"}
+{"prompt": "what does --json do in cp", "completion": "cp -h --json", "source": "option-help"}
+{"prompt": "explain cp --json", "completion": "cp -h --json", "source": "option-help"}
+{"prompt": "show cp --json parameter in json", "completion": "cp -h --json", "source": "option-help"}
+{"prompt": "what does --version do in cp", "completion": "cp -h --json", "source": "option-help"}
+{"prompt": "explain cp --version", "completion": "cp -h --json", "source": "option-help"}
+{"prompt": "show cp --version parameter in json", "completion": "cp -h --json", "source": "option-help"}
+{"prompt": "show help for mv", "completion": "mv -h", "source": "generic-help"}
+{"prompt": "how do I use mv", "completion": "mv -h", "source": "generic-help"}
+{"prompt": "show help for mv in json", "completion": "mv -h --json", "source": "json-help"}
+{"prompt": "explain mv as json", "completion": "mv -h --json", "source": "json-help"}
+{"prompt": "what is the version of mv", "completion": "mv --version", "source": "version"}
+{"prompt": "show mv version", "completion": "mv --version", "source": "version"}
+{"prompt": "what does --json do in mv", "completion": "mv -h --json", "source": "option-help"}
+{"prompt": "explain mv --json", "completion": "mv -h --json", "source": "option-help"}
+{"prompt": "show mv --json parameter in json", "completion": "mv -h --json", "source": "option-help"}
+{"prompt": "what does --version do in mv", "completion": "mv -h --json", "source": "option-help"}
+{"prompt": "explain mv --version", "completion": "mv -h --json", "source": "option-help"}
+{"prompt": "show mv --version parameter in json", "completion": "mv -h --json", "source": "option-help"}
+{"prompt": "show help for rm", "completion": "rm -h", "source": "generic-help"}
+{"prompt": "how do I use rm", "completion": "rm -h", "source": "generic-help"}
+{"prompt": "show help for rm in json", "completion": "rm -h --json", "source": "json-help"}
+{"prompt": "explain rm as json", "completion": "rm -h --json", "source": "json-help"}
+{"prompt": "what is the version of rm", "completion": "rm --version", "source": "version"}
+{"prompt": "show rm version", "completion": "rm --version", "source": "version"}
+{"prompt": "what does --json do in rm", "completion": "rm -h --json", "source": "option-help"}
+{"prompt": "explain rm --json", "completion": "rm -h --json", "source": "option-help"}
+{"prompt": "show rm --json parameter in json", "completion": "rm -h --json", "source": "option-help"}
+{"prompt": "what does -f do in rm", "completion": "rm -h --json", "source": "option-help"}
+{"prompt": "explain rm -f", "completion": "rm -h --json", "source": "option-help"}
+{"prompt": "show rm -f parameter in json", "completion": "rm -h --json", "source": "option-help"}
+{"prompt": "what does --version do in rm", "completion": "rm -h --json", "source": "option-help"}
+{"prompt": "explain rm --version", "completion": "rm -h --json", "source": "option-help"}
+{"prompt": "show rm --version parameter in json", "completion": "rm -h --json", "source": "option-help"}
+{"prompt": "show help for dirname", "completion": "dirname -h", "source": "generic-help"}
+{"prompt": "how do I use dirname", "completion": "dirname -h", "source": "generic-help"}
+{"prompt": "show help for dirname in json", "completion": "dirname -h --json", "source": "json-help"}
+{"prompt": "explain dirname as json", "completion": "dirname -h --json", "source": "json-help"}
+{"prompt": "what is the version of dirname", "completion": "dirname --version", "source": "version"}
+{"prompt": "show dirname version", "completion": "dirname --version", "source": "version"}
+{"prompt": "what does --json do in dirname", "completion": "dirname -h --json", "source": "option-help"}
+{"prompt": "explain dirname --json", "completion": "dirname -h --json", "source": "option-help"}
+{"prompt": "show dirname --json parameter in json", "completion": "dirname -h --json", "source": "option-help"}
+{"prompt": "what does --version do in dirname", "completion": "dirname -h --json", "source": "option-help"}
+{"prompt": "explain dirname --version", "completion": "dirname -h --json", "source": "option-help"}
+{"prompt": "show dirname --version parameter in json", "completion": "dirname -h --json", "source": "option-help"}
+{"prompt": "show help for du", "completion": "du -h", "source": "generic-help"}
+{"prompt": "how do I use du", "completion": "du -h", "source": "generic-help"}
+{"prompt": "show help for du in json", "completion": "du -h --json", "source": "json-help"}
+{"prompt": "explain du as json", "completion": "du -h --json", "source": "json-help"}
+{"prompt": "what is the version of du", "completion": "du --version", "source": "version"}
+{"prompt": "show du version", "completion": "du --version", "source": "version"}
+{"prompt": "what does --json do in du", "completion": "du -h --json", "source": "option-help"}
+{"prompt": "explain du --json", "completion": "du -h --json", "source": "option-help"}
+{"prompt": "show du --json parameter in json", "completion": "du -h --json", "source": "option-help"}
+{"prompt": "what does --version do in du", "completion": "du -h --json", "source": "option-help"}
+{"prompt": "explain du --version", "completion": "du -h --json", "source": "option-help"}
+{"prompt": "show du --version parameter in json", "completion": "du -h --json", "source": "option-help"}
+{"prompt": "list files", "completion": "ls", "source": "manual-template"}
+{"prompt": "list file names in json format", "completion": "ls --json", "source": "manual-template"}
+{"prompt": "list files in reverse order", "completion": "ls -r", "source": "manual-template"}
+{"prompt": "list hidden files", "completion": "ls -a", "source": "manual-template"}
+{"prompt": "list hidden files with details", "completion": "ls -a -l", "source": "manual-template"}
+{"prompt": "list files recursively", "completion": "ls -R", "source": "manual-template"}
+{"prompt": "list files sorted by size", "completion": "ls -S", "source": "manual-template"}
+{"prompt": "list newest files", "completion": "ls -t", "source": "manual-template"}
+{"prompt": "where am I", "completion": "pwd", "source": "manual-template"}
+{"prompt": "show current directory", "completion": "pwd", "source": "manual-template"}
+{"prompt": "print hello", "completion": "echo hello", "source": "manual-template"}
+{"prompt": "say hello world", "completion": "echo hello world", "source": "manual-template"}
+{"prompt": "create directory named reports", "completion": "mkdir reports", "source": "manual-template"}
+{"prompt": "make folder called logs", "completion": "mkdir logs", "source": "manual-template"}
+{"prompt": "remove directory old", "completion": "rmdir old", "source": "manual-template"}
+{"prompt": "who am I", "completion": "whoami", "source": "manual-template"}
+{"prompt": "show system information", "completion": "uname -a", "source": "manual-template"}
+{"prompt": "show my uid and gid", "completion": "id", "source": "manual-template"}
+{"prompt": "clear the screen", "completion": "clear", "source": "manual-template"}
+{"prompt": "count words in README.md", "completion": "wc README.md", "source": "manual-template"}
+{"prompt": "show first lines of README.md", "completion": "head README.md", "source": "manual-template"}
+{"prompt": "show last lines of README.md", "completion": "tail README.md", "source": "manual-template"}
+{"prompt": "show disk usage of README.md", "completion": "du README.md", "source": "manual-template"}
+{"prompt": "read file README.md", "completion": "cat README.md", "source": "manual-template"}

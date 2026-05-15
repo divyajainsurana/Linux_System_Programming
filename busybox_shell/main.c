@@ -12,12 +12,21 @@
 #define MAX_ARGS 64
 #define MAX_HISTORY 100
 #define MAX_COMPLETIONS 128
+#define MAX_NL_CACHE 64
 #define SHELL_NAME "busybox_shell"
 #define SHELL_VERSION "1.0.0"
 #define HISTORY_FILE ".busybox_shell_history"
 
 static char *history[MAX_HISTORY];
 static int history_count;
+
+struct nl_cache_entry {
+    char request[MAX_INPUT];
+    char command[MAX_INPUT];
+};
+
+static struct nl_cache_entry nl_cache[MAX_NL_CACHE];
+static int nl_cache_count;
 
 struct completion_list {
     char *items[MAX_COMPLETIONS];
@@ -229,6 +238,84 @@ static void trim_newline(char *line)
         line[length - 1] = '\0';
         length--;
     }
+}
+
+static void normalize_nl_request(const char *request, char *out, size_t out_size)
+{
+    size_t read_index = 0;
+    size_t write_index = 0;
+    int previous_space = 1;
+
+    while (request[read_index] != '\0' && write_index + 1 < out_size) {
+        char ch = request[read_index];
+
+        if (ch >= 'A' && ch <= 'Z') {
+            ch = (char) (ch - 'A' + 'a');
+        }
+
+        if (ch == ' ' || ch == '\t' || ch == '\r' || ch == '\n') {
+            if (!previous_space) {
+                out[write_index++] = ' ';
+                previous_space = 1;
+            }
+        } else {
+            out[write_index++] = ch;
+            previous_space = 0;
+        }
+        read_index++;
+    }
+
+    if (write_index > 0 && out[write_index - 1] == ' ') {
+        write_index--;
+    }
+    out[write_index] = '\0';
+}
+
+static int lookup_nl_cache(const char *request, char *command, size_t command_size)
+{
+    char normalized[MAX_INPUT];
+    int index;
+
+    normalize_nl_request(request, normalized, sizeof(normalized));
+    for (index = 0; index < nl_cache_count; index++) {
+        if (strcmp(nl_cache[index].request, normalized) == 0) {
+            snprintf(command, command_size, "%s", nl_cache[index].command);
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+static void store_nl_cache(const char *request, const char *command)
+{
+    char normalized[MAX_INPUT];
+    int index;
+
+    normalize_nl_request(request, normalized, sizeof(normalized));
+    if (normalized[0] == '\0') {
+        return;
+    }
+
+    for (index = 0; index < nl_cache_count; index++) {
+        if (strcmp(nl_cache[index].request, normalized) == 0) {
+            snprintf(nl_cache[index].command, sizeof(nl_cache[index].command), "%s", command);
+            return;
+        }
+    }
+
+    if (nl_cache_count == MAX_NL_CACHE) {
+        for (index = 1; index < MAX_NL_CACHE; index++) {
+            nl_cache[index - 1] = nl_cache[index];
+        }
+        nl_cache_count--;
+    }
+
+    snprintf(nl_cache[nl_cache_count].request, sizeof(nl_cache[nl_cache_count].request),
+             "%s", normalized);
+    snprintf(nl_cache[nl_cache_count].command, sizeof(nl_cache[nl_cache_count].command),
+             "%s", command);
+    nl_cache_count++;
 }
 
 static void add_history_entry(const char *line)
@@ -837,6 +924,34 @@ static void sanitize_name(char *text)
     text[write_index] = '\0';
 }
 
+static void sanitize_echo_text(char *text)
+{
+    size_t read_index = 0;
+    size_t write_index = 0;
+
+    while (text[read_index] != '\0') {
+        char ch = text[read_index];
+
+        if (ch == '"' || ch == '\'' || ch == ';' || ch == '&' ||
+            ch == '|' || ch == '<' || ch == '>' || ch == '`') {
+            read_index++;
+            continue;
+        }
+
+        if (ch == '\t' || ch == '\r' || ch == '\n') {
+            ch = ' ';
+        }
+
+        text[write_index++] = ch;
+        read_index++;
+    }
+
+    while (write_index > 0 && text[write_index - 1] == ' ') {
+        write_index--;
+    }
+    text[write_index] = '\0';
+}
+
 static int extract_word_after_phrase(const char *text, const char *phrase,
                                      char *out, size_t out_size)
 {
@@ -880,14 +995,264 @@ static void command_with_optional_name(char *command, size_t command_size,
     snprintf(command, command_size, "%s %s", base_command, name);
 }
 
-static int fallback_nl_to_command(const char *request, char *command, size_t command_size)
+static int request_is_create_directory(const char *request)
 {
     char lower[MAX_INPUT];
 
     lowercase_copy(lower, sizeof(lower), request);
+    return (text_contains(lower, "create") ||
+            text_contains(lower, "make") ||
+            text_contains(lower, "new")) &&
+           (text_contains(lower, "directory") ||
+            text_contains(lower, "folder"));
+}
 
-    if (text_contains(lower, "date") || text_contains(lower, "today")) {
+static int request_is_remove_directory(const char *request)
+{
+    char lower[MAX_INPUT];
+
+    lowercase_copy(lower, sizeof(lower), request);
+    return (text_contains(lower, "remove") ||
+            text_contains(lower, "delete")) &&
+           (text_contains(lower, "directory") ||
+            text_contains(lower, "folder"));
+}
+
+static int extract_request_name(const char *request, char *name, size_t name_size)
+{
+    return extract_word_after_phrase(request, "named", name, name_size) ||
+           extract_word_after_phrase(request, "called", name, name_size) ||
+           extract_word_after_phrase(request, "directory", name, name_size) ||
+           extract_word_after_phrase(request, "folder", name, name_size);
+}
+
+static int word_is_command_name(const char *word)
+{
+    return find_command(word) != NULL ||
+           strcmp(word, "help") == 0 ||
+           strcmp(word, "version") == 0 ||
+           strcmp(word, "exit") == 0 ||
+           strcmp(word, "quit") == 0;
+}
+
+static int extract_command_name_from_request(const char *request,
+                                             char *name,
+                                             size_t name_size)
+{
+    char copy[MAX_INPUT];
+    char *token;
+    int saw_help = 0;
+
+    snprintf(copy, sizeof(copy), "%s", request);
+    token = strtok(copy, " \t\r\n,.;:?!()[]{}\"'");
+
+    while (token != NULL) {
+        sanitize_name(token);
+        if (strcmp(token, "help") == 0) {
+            saw_help = 1;
+            token = strtok(NULL, " \t\r\n,.;:?!()[]{}\"'");
+            continue;
+        }
+        if (word_is_command_name(token)) {
+            snprintf(name, name_size, "%s", token);
+            return 1;
+        }
+        token = strtok(NULL, " \t\r\n,.;:?!()[]{}\"'");
+    }
+
+    if (saw_help) {
+        snprintf(name, name_size, "help");
+        return 1;
+    }
+
+    return 0;
+}
+
+static int request_is_help_question(const char *lower)
+{
+    return text_contains(lower, "help") ||
+           text_contains(lower, "usage") ||
+           text_contains(lower, "option") ||
+           text_contains(lower, "how do i use") ||
+           text_contains(lower, "how to use");
+}
+
+static int request_is_explanation_question(const char *lower)
+{
+    return text_contains(lower, "what does") ||
+           text_contains(lower, "what is") ||
+           text_contains(lower, "explain") ||
+           text_contains(lower, "describe");
+}
+
+static int request_is_option_question(const char *request)
+{
+    return text_contains(request, " -") ||
+           text_contains(request, "--") ||
+           text_contains(request, "flag") ||
+           text_contains(request, "option") ||
+           text_contains(request, "parameter") ||
+           text_contains(request, "param");
+}
+
+static int extract_echo_text(const char *request, char *out, size_t out_size)
+{
+    static const char *phrases[] = {
+        "print out",
+        "print",
+        "say",
+        "write",
+        "display",
+        "show message",
+        "output"
+    };
+    size_t index;
+
+    for (index = 0; index < sizeof(phrases) / sizeof(phrases[0]); index++) {
+        const char *start = strstr(request, phrases[index]);
+
+        if (start != NULL) {
+            start += strlen(phrases[index]);
+            start = skip_spaces(start);
+            if (strncmp(start, "the word ", 9) == 0) {
+                start += 9;
+            } else if (strncmp(start, "message ", 8) == 0) {
+                start += 8;
+            } else if (strncmp(start, "text ", 5) == 0) {
+                start += 5;
+            }
+            snprintf(out, out_size, "%s", start);
+            sanitize_echo_text(out);
+            return out[0] != '\0';
+        }
+    }
+
+    return 0;
+}
+
+static int extract_last_name(const char *request, char *name, size_t name_size)
+{
+    char copy[MAX_INPUT];
+    char *token;
+    char last[MAX_INPUT] = "";
+
+    snprintf(copy, sizeof(copy), "%s", request);
+    token = strtok(copy, " \t\r\n,;:?!()[]{}\"'");
+
+    while (token != NULL) {
+        sanitize_name(token);
+        if (token[0] != '\0' &&
+            strcmp(token, "the") != 0 &&
+            strcmp(token, "a") != 0 &&
+            strcmp(token, "an") != 0 &&
+            strcmp(token, "of") != 0 &&
+            strcmp(token, "in") != 0 &&
+            strcmp(token, "file") != 0 &&
+            strcmp(token, "directory") != 0 &&
+            strcmp(token, "folder") != 0 &&
+            !word_is_command_name(token)) {
+            snprintf(last, sizeof(last), "%s", token);
+        }
+        token = strtok(NULL, " \t\r\n,;:?!()[]{}\"'");
+    }
+
+    if (last[0] == '\0') {
+        return 0;
+    }
+
+    snprintf(name, name_size, "%s", last);
+    return 1;
+}
+
+static int request_wants_json(const char *lower)
+{
+    return text_contains(lower, "json") ||
+           text_contains(lower, "machine readable") ||
+           text_contains(lower, "structured");
+}
+
+static int request_wants_reverse(const char *lower)
+{
+    return text_contains(lower, "reverse") ||
+           text_contains(lower, "reversed") ||
+           text_contains(lower, "backwards") ||
+           text_contains(lower, "opposite order");
+}
+
+static int request_wants_ls(const char *lower)
+{
+    return text_contains(lower, "list") ||
+           text_contains(lower, "files") ||
+           text_contains(lower, "file names") ||
+           text_contains(lower, "show directory");
+}
+
+static int build_ls_command_from_request(const char *lower,
+                                         char *command,
+                                         size_t command_size)
+{
+    if (!request_wants_ls(lower)) {
+        return 0;
+    }
+
+    snprintf(command, command_size, "ls");
+
+    if (request_wants_json(lower)) {
+        strncat(command, " --json", command_size - strlen(command) - 1);
+    }
+    if (request_wants_reverse(lower)) {
+        strncat(command, " -r", command_size - strlen(command) - 1);
+    }
+    if (text_contains(lower, "hidden") ||
+        text_contains(lower, "all files") ||
+        text_contains(lower, "dot files")) {
+        strncat(command, " -a", command_size - strlen(command) - 1);
+    }
+    if (text_contains(lower, "long") ||
+        text_contains(lower, "details") ||
+        text_contains(lower, "detailed")) {
+        strncat(command, " -l", command_size - strlen(command) - 1);
+    }
+    if (text_contains(lower, "recursive") ||
+        text_contains(lower, "recursively") ||
+        text_contains(lower, "subdirectories")) {
+        strncat(command, " -R", command_size - strlen(command) - 1);
+    }
+    if (text_contains(lower, "size")) {
+        strncat(command, " -S", command_size - strlen(command) - 1);
+    } else if (text_contains(lower, "time") ||
+               text_contains(lower, "newest") ||
+               text_contains(lower, "recent") ||
+               text_contains(lower, "modified")) {
+        strncat(command, " -t", command_size - strlen(command) - 1);
+    }
+    if (text_contains(lower, "color") ||
+        text_contains(lower, "colour")) {
+        strncat(command, " --color", command_size - strlen(command) - 1);
+    }
+
+    return 1;
+}
+
+static int fallback_nl_to_command(const char *request, char *command, size_t command_size)
+{
+    char lower[MAX_INPUT];
+    char echo_text[MAX_INPUT];
+    char command_name[MAX_INPUT];
+    char target[MAX_INPUT];
+
+    lowercase_copy(lower, sizeof(lower), request);
+
+    if (request_is_option_question(lower)) {
+        return 0;
+    } else if ((request_is_help_question(lower) ||
+         request_is_explanation_question(lower)) &&
+        extract_command_name_from_request(lower, command_name, sizeof(command_name))) {
+        snprintf(command, command_size, "help %s", command_name);
+    } else if (text_contains(lower, "date") || text_contains(lower, "today")) {
         snprintf(command, command_size, "localdate");
+    } else if (extract_echo_text(request, echo_text, sizeof(echo_text))) {
+        snprintf(command, command_size, "echo %s", echo_text);
     } else if ((text_contains(lower, "create") ||
                 text_contains(lower, "make") ||
                 text_contains(lower, "new")) &&
@@ -903,10 +1268,8 @@ static int fallback_nl_to_command(const char *request, char *command, size_t com
                text_contains(lower, "where am i") ||
                text_contains(lower, "working directory")) {
         snprintf(command, command_size, "pwd");
-    } else if (text_contains(lower, "list") ||
-               text_contains(lower, "files") ||
-               text_contains(lower, "show directory")) {
-        snprintf(command, command_size, "ls");
+    } else if (build_ls_command_from_request(lower, command, command_size)) {
+        return 1;
     } else if (text_contains(lower, "who am i") ||
                text_contains(lower, "username") ||
                text_contains(lower, "user name")) {
@@ -919,6 +1282,31 @@ static int fallback_nl_to_command(const char *request, char *command, size_t com
                text_contains(lower, "uid") ||
                text_contains(lower, "gid")) {
         snprintf(command, command_size, "id");
+    } else if (text_contains(lower, "clear") &&
+               text_contains(lower, "screen")) {
+        snprintf(command, command_size, "clear");
+    } else if ((text_contains(lower, "count") ||
+                text_contains(lower, "word count") ||
+                text_contains(lower, "line count")) &&
+               extract_last_name(request, target, sizeof(target))) {
+        snprintf(command, command_size, "wc %s", target);
+    } else if ((text_contains(lower, "first") ||
+                text_contains(lower, "beginning")) &&
+               extract_last_name(request, target, sizeof(target))) {
+        snprintf(command, command_size, "head %s", target);
+    } else if ((text_contains(lower, "last") ||
+                text_contains(lower, "end of")) &&
+               extract_last_name(request, target, sizeof(target))) {
+        snprintf(command, command_size, "tail %s", target);
+    } else if ((text_contains(lower, "disk usage") ||
+                text_contains(lower, "size of")) &&
+               extract_last_name(request, target, sizeof(target))) {
+        snprintf(command, command_size, "du %s", target);
+    } else if ((text_contains(lower, "show file") ||
+                text_contains(lower, "read file") ||
+                text_contains(lower, "view file")) &&
+               extract_last_name(request, target, sizeof(target))) {
+        snprintf(command, command_size, "cat %s", target);
     } else if (text_contains(lower, "help")) {
         snprintf(command, command_size, "help");
     } else {
@@ -967,7 +1355,11 @@ static int read_helper_command(const char *request, char *command, size_t comman
     FILE *pipe;
 
     if (helper == NULL || *helper == '\0') {
-        return 0;
+        if (access("./ollama_llm_helper.sh", X_OK) == 0) {
+            helper = "./ollama_llm_helper.sh";
+        } else {
+            return 0;
+        }
     }
 
     snprintf(prompt, sizeof(prompt),
@@ -998,6 +1390,23 @@ static int command_is_safe_to_dispatch(char *command)
     char copy[MAX_INPUT];
     char *argv[MAX_ARGS];
     int argc;
+    size_t index;
+
+    for (index = 0; command[index] != '\0'; index++) {
+        if (command[index] == ';' ||
+            command[index] == '&' ||
+            command[index] == '|' ||
+            command[index] == '<' ||
+            command[index] == '>' ||
+            command[index] == '`' ||
+            command[index] == '$' ||
+            command[index] == '(' ||
+            command[index] == ')' ||
+            command[index] == '\n' ||
+            command[index] == '\r') {
+            return 0;
+        }
+    }
 
     snprintf(copy, sizeof(copy), "%s", command);
     argc = split_line(copy, argv, MAX_ARGS);
@@ -1042,10 +1451,96 @@ static int ask_yes_no(const char *prompt)
     return answer[0] == 'y' || answer[0] == 'Y';
 }
 
+static int ask_for_name(const char *prompt, char *name, size_t name_size)
+{
+    printf("%s", prompt);
+    fflush(stdout);
+
+    if (fgets(name, name_size, stdin) == NULL) {
+        return 0;
+    }
+
+    trim_newline(name);
+    sanitize_name(name);
+    return name[0] != '\0';
+}
+
+static int clarify_missing_nl_arguments(const char *request,
+                                        int interactive_terminal,
+                                        char *command,
+                                        size_t command_size)
+{
+    char name[MAX_INPUT];
+
+    if (!interactive_terminal) {
+        return 0;
+    }
+
+    if (request_is_create_directory(request) &&
+        !extract_request_name(request, name, sizeof(name))) {
+        if (!ask_for_name("Directory name: ", name, sizeof(name))) {
+            printf("No directory name provided.\n");
+            return -1;
+        }
+        snprintf(command, command_size, "mkdir %s", name);
+        return 1;
+    }
+
+    if (request_is_remove_directory(request) &&
+        !extract_request_name(request, name, sizeof(name))) {
+        if (!ask_for_name("Directory name to remove: ", name, sizeof(name))) {
+            printf("No directory name provided.\n");
+            return -1;
+        }
+        snprintf(command, command_size, "rmdir %s", name);
+        return 1;
+    }
+
+    return 0;
+}
+
+static int try_ollama_after_reject(const char *request,
+                                   const char *previous_command,
+                                   char *accepted_command,
+                                   size_t accepted_command_size)
+{
+    char ollama_command[MAX_INPUT];
+    int status;
+
+    printf("Asking Ollama for another suggestion...\n");
+
+    if (!read_helper_command(request, ollama_command, sizeof(ollama_command))) {
+        printf("No alternate AI suggestion available. Set MYSH_LLM_HELPER to use Ollama.\n");
+        return 0;
+    }
+
+    if (!command_is_safe_to_dispatch(ollama_command)) {
+        fprintf(stderr, "Ollama suggested an unsupported command: %s\n", ollama_command);
+        return 1;
+    }
+
+    if (strcmp(previous_command, ollama_command) == 0) {
+        printf("Ollama suggested the same command: %s\n", ollama_command);
+        return 0;
+    }
+
+    printf("Ollama suggestion: %s\n", ollama_command);
+    if (!ask_yes_no("Run it? [y/N] ")) {
+        return 0;
+    }
+
+    snprintf(accepted_command, accepted_command_size, "%s", ollama_command);
+    status = dispatch_command_line(ollama_command);
+    return status < 0 ? 0 : status;
+}
+
 static int handle_natural_language_request(const char *line, int interactive_terminal)
 {
     const char *request = skip_spaces(line + 1);
     char command[MAX_INPUT];
+    int clarified;
+    int cacheable = 1;
+    int used_helper = 0;
     int status;
 
     if (is_blank_line(request)) {
@@ -1053,10 +1548,39 @@ static int handle_natural_language_request(const char *line, int interactive_ter
         return 0;
     }
 
-    if (!fallback_nl_to_command(request, command, sizeof(command)) &&
-        !read_helper_command(request, command, sizeof(command))) {
-        printf("AI suggestion unavailable. Set MYSH_LLM_HELPER or try a simpler request.\n");
+    if (lookup_nl_cache(request, command, sizeof(command))) {
+        printf("AI suggestion: %s\n", command);
+        if (interactive_terminal) {
+            if (!ask_yes_no("Run it? [y/N] ")) {
+                status = try_ollama_after_reject(request, command, command, sizeof(command));
+                if (status == 0) {
+                    store_nl_cache(request, command);
+                }
+                return status;
+            }
+            status = dispatch_command_line(command);
+            return status < 0 ? 0 : status;
+        }
+        printf("Not running suggestion in non-interactive mode.\n");
+        return 0;
+    }
+
+    clarified = clarify_missing_nl_arguments(request, interactive_terminal,
+                                             command, sizeof(command));
+    if (clarified < 0) {
         return 1;
+    }
+    if (clarified > 0) {
+        cacheable = 0;
+    }
+
+    if (clarified == 0 &&
+        !fallback_nl_to_command(request, command, sizeof(command))) {
+        if (!read_helper_command(request, command, sizeof(command))) {
+            printf("AI suggestion unavailable. Set MYSH_LLM_HELPER or try a simpler request.\n");
+            return 1;
+        }
+        used_helper = 1;
     }
 
     if (!command_is_safe_to_dispatch(command)) {
@@ -1064,10 +1588,21 @@ static int handle_natural_language_request(const char *line, int interactive_ter
         return 1;
     }
 
+    if (cacheable) {
+        store_nl_cache(request, command);
+    }
+
     printf("AI suggestion: %s\n", command);
 
     if (interactive_terminal) {
         if (!ask_yes_no("Run it? [y/N] ")) {
+            if (!used_helper) {
+                status = try_ollama_after_reject(request, command, command, sizeof(command));
+                if (status == 0 && cacheable) {
+                    store_nl_cache(request, command);
+                }
+                return status;
+            }
             return 0;
         }
     } else {

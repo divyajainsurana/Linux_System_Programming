@@ -84,6 +84,16 @@ Run it? [y/N] y
 Local Date: 2026-05-14
 ```
 
+If a request is missing required information, the shell asks a follow-up
+question before suggesting the command:
+
+```text
+busybox_shell> @ create a directory
+Directory name: reports
+AI suggestion: mkdir reports
+Run it? [y/N] y
+```
+
 The shell can connect to an external LLM helper through `MYSH_LLM_HELPER`.
 The helper receives one prompt argument and should print exactly one
 `busybox_shell` command:
@@ -96,7 +106,7 @@ An Ollama helper is included. Install Ollama, pull a local model, then start
 the shell with the helper:
 
 ```sh
-ollama pull qwen2.5:1.5b
+ollama pull qwen2.5:3b
 MYSH_LLM_HELPER="./ollama_llm_helper.sh" ./busybox_shell
 ```
 
@@ -106,24 +116,72 @@ To use a different local model:
 OLLAMA_MODEL="mistral" MYSH_LLM_HELPER="./ollama_llm_helper.sh" ./busybox_shell
 ```
 
+For faster second suggestions, use a smaller model or a shorter timeout:
+
+```sh
+OLLAMA_MODEL="qwen2.5:1.5b" OLLAMA_TIMEOUT=10 ./busybox_shell
+```
+
 If Ollama was installed locally in this repository, use:
 
 ```sh
 cd busybox_shell
 HOME="$PWD/../tools/ollama-home" \
 OLLAMA_MODELS="$PWD/../tools/ollama-models" \
-MYSH_LLM_HELPER="./ollama_llm_helper.sh" \
 ./busybox_shell
 ```
+
+When the shell is started from the `busybox_shell` directory, it automatically
+uses `./ollama_llm_helper.sh` if `MYSH_LLM_HELPER` is not set.
 
 The shell validates the suggested command before running it. Only registered
 commands and shell built-ins are accepted. In interactive mode, suggestions are
 shown first and require confirmation. In non-interactive mode, suggestions are
 shown but not executed.
 
+The shell handles common requests with deterministic rules before calling the
+LLM, then caches successful translations during the session. If you reject a
+deterministic suggestion by answering `n`, the shell asks the configured Ollama
+helper for another suggestion. The Ollama helper also reads
+`./busybox_shell help --json` so its prompt uses the current command list
+instead of a hardcoded list.
+
 If no helper is configured, the shell uses a tiny demo fallback for common
-requests such as listing files, showing the current directory, printing the
-date, showing the current user, and showing system information.
+requests such as listing files, creating directories, printing text, showing
+the current directory, printing the date, showing command help, counting files,
+showing file beginnings/endings, showing disk usage, showing the current user,
+and showing system information.
+
+### Training Data
+
+The project includes a generator for fine-tuning examples. It reads the live
+shell command list and help output, then writes prompt/completion pairs:
+
+```sh
+make
+./generate_training_data.sh
+```
+
+The output is:
+
+```text
+training_data.jsonl
+```
+
+Example rows:
+
+```json
+{"prompt":"what does --json do in ls","completion":"ls -h --json","source":"option-help"}
+{"prompt":"what is the version of ls","completion":"ls --version","source":"version"}
+```
+
+Regenerate this file whenever commands or options change.
+
+For a LoRA fine-tuning workflow, see:
+
+```text
+training/README.md
+```
 
 ## Commands
 
@@ -422,8 +480,8 @@ command history supports simple quoted text only through the existing
 whitespace-based command splitter
 tab completion follows the same whitespace-based parsing, so paths containing
 spaces are not completed as quoted shell words yet
-the @ interface validates only the first suggested command word, so complex
-shell syntax is intentionally not supported
+the @ interface rejects shell operators and validates the suggested first
+command word, so complex shell syntax is intentionally not supported
 ```
 
 ## Author
