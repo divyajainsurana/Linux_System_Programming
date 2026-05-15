@@ -72,6 +72,59 @@ busybox_shell> cat READ<Tab>  completes to README.md when it is unique
 busybox_shell> c<Tab>         shows matches such as cat, clear, and cp
 ```
 
+## Natural-Language `@` Interface
+
+Interactive input that starts with `@` is treated as a natural-language shell
+request:
+
+```text
+busybox_shell> @ show today's date
+AI suggestion: localdate
+Run it? [y/N] y
+Local Date: 2026-05-14
+```
+
+The shell can connect to an external LLM helper through `MYSH_LLM_HELPER`.
+The helper receives one prompt argument and should print exactly one
+`busybox_shell` command:
+
+```sh
+MYSH_LLM_HELPER="./my_llm_helper.sh" ./busybox_shell
+```
+
+An Ollama helper is included. Install Ollama, pull a local model, then start
+the shell with the helper:
+
+```sh
+ollama pull qwen2.5:1.5b
+MYSH_LLM_HELPER="./ollama_llm_helper.sh" ./busybox_shell
+```
+
+To use a different local model:
+
+```sh
+OLLAMA_MODEL="mistral" MYSH_LLM_HELPER="./ollama_llm_helper.sh" ./busybox_shell
+```
+
+If Ollama was installed locally in this repository, use:
+
+```sh
+cd busybox_shell
+HOME="$PWD/../tools/ollama-home" \
+OLLAMA_MODELS="$PWD/../tools/ollama-models" \
+MYSH_LLM_HELPER="./ollama_llm_helper.sh" \
+./busybox_shell
+```
+
+The shell validates the suggested command before running it. Only registered
+commands and shell built-ins are accepted. In interactive mode, suggestions are
+shown first and require confirmation. In non-interactive mode, suggestions are
+shown but not executed.
+
+If no helper is configured, the shell uses a tiny demo fallback for common
+requests such as listing files, showing the current directory, printing the
+date, showing the current user, and showing system information.
+
 ## Commands
 
 Built-in commands currently registered:
@@ -344,6 +397,7 @@ The shell flow is:
 ```text
 read input
 load/save interactive history
+translate @ natural-language requests
 split into argv
 handle help/exit/quit
 find command in registry
@@ -368,6 +422,8 @@ command history supports simple quoted text only through the existing
 whitespace-based command splitter
 tab completion follows the same whitespace-based parsing, so paths containing
 spaces are not completed as quoted shell words yet
+the @ interface validates only the first suggested command word, so complex
+shell syntax is intentionally not supported
 ```
 
 ## Author

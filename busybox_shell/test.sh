@@ -12,6 +12,12 @@ printf "\033[1mTesting version output...\033[0m\n"
 ./busybox_shell rm --version --json | grep "\"version\":\"1.0.0\""
 ./busybox_shell help | grep "Common features:"
 ./busybox_shell help ls | grep "show command version and exit"
+./busybox_shell help | grep "@ <request>"
+
+printf "\033[1mTesting natural-language @ interface...\033[0m\n"
+printf "@list files\nexit\n" | ./busybox_shell | grep "AI suggestion: ls"
+printf "@where am I\nexit\n" | ./busybox_shell | grep "AI suggestion: pwd"
+printf "@create a directory named ai_test_dir\nexit\n" | ./busybox_shell | grep "AI suggestion: mkdir ai_test_dir"
 
 printf "\033[1mTesting localdate...\033[0m\n"
 ./busybox_shell localdate | grep -E "Local Date: [0-9]{4}-[0-9]{2}-[0-9]{2}"
