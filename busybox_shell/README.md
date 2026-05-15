@@ -434,8 +434,52 @@ or:
 make test
 ```
 
-The test script checks the built-in commands and also creates a temporary
-`hello` package to verify:
+The test script prints each command group as a numbered section. Every test case
+is shown in columns with the case number, test name, pass/fail result, and a
+compact preview of the `busybox_shell` output:
+
+```text
+[01] Testing version output
+Case     Test                                           Result   BusyBox output
+-------- ---------------------------------------------- -------- ----------------------------------------------------------
+01.01    busybox_shell version                          PASS     busybox_shell 1.0.0
+01.02    ls command version                             PASS     ls (busybox_shell) 1.0.0
+
+[06] Testing pkg
+Case     Test                                           Result   BusyBox output
+-------- ---------------------------------------------- -------- ----------------------------------------------------------
+06.01    pkg prints busybox package details             PASS     Package: busybox_shell Version: 1.0.0 Description: Modu...
+         | Package: busybox_shell
+         | Version: 1.0.0
+         | Description: Modular CLI utilities in C
+         | Commands:
+         |   ls - list directory contents
+         |   pkg - manage shell packages
+```
+
+Long command output is shortened in the table so the terminal stays readable.
+Tests that would mutate files if run twice show `-` in the output column.
+
+At the end, the script prints the total number of test cases:
+
+```text
+Total test cases: 130
+All tests passed!
+```
+
+To demo only the package section:
+
+```sh
+./test.sh pkg
+```
+
+To demo only the package build/install/list/remove flow:
+
+```sh
+./test.sh pkg-demo
+```
+
+The package-manager test creates a temporary `hello` package to verify:
 
 ```text
 pkg build -> pkg install -> pkg list -> installed executable -> pkg remove
