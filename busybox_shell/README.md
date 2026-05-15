@@ -94,6 +94,10 @@ AI suggestion: mkdir reports
 Run it? [y/N] y
 ```
 
+Example session:
+
+![Natural-language busybox_shell example](docs/images/natural-language-example.jpeg)
+
 The shell can connect to an external LLM helper through `MYSH_LLM_HELPER`.
 The helper receives one prompt argument and should print exactly one
 `busybox_shell` command:
