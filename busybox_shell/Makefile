@@ -1,5 +1,5 @@
 CC = gcc
-CFLAGS = -Wall -Wextra -std=c11
+CFLAGS = -Wall -Wextra -std=c11 -pthread
 
 TARGET = busybox_shell
 
@@ -25,6 +25,7 @@ SRC = main.c \
       cmd_rm.c \
       cmd_dirname.c \
       cmd_du.c \
+      cmd_threads.c \
       registry.c \
       register_all_commands.c \
       json_utils.c \

@@ -2,7 +2,9 @@
 #include <stdlib.h>
 #include <string.h>
 #include <dirent.h>
+#include <errno.h>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <termios.h>
 #include <unistd.h>
 #include "cmd_spec.h"
@@ -13,10 +15,12 @@
 #define MAX_HISTORY 100
 #define MAX_COMPLETIONS 128
 #define MAX_NL_CACHE 64
+#define MAX_PIPE_COMMANDS 16
 #define SHELL_NAME "busybox_shell"
 #define SHELL_VERSION "1.0.0"
 #define HISTORY_FILE ".busybox_shell_history"
 
+static const char *shell_program_path;
 static char *history[MAX_HISTORY];
 static int history_count;
 
@@ -880,6 +884,201 @@ static int dispatch_command(int argc, char **argv)
     return cmd->run(argc, argv);
 }
 
+static int argv_contains_pipe(int argc, char **argv)
+{
+    int index;
+
+    for (index = 0; index < argc; index++) {
+        if (strcmp(argv[index], "|") == 0) {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+static int line_contains_pipe(const char *line)
+{
+    return strchr(line, '|') != NULL;
+}
+
+static int run_exec_child(int argc, char **argv)
+{
+    char *child_argv[MAX_ARGS + 2];
+    int index;
+
+    child_argv[0] = (char *) shell_program_path;
+    for (index = 0; index < argc && index + 2 < MAX_ARGS + 2; index++) {
+        child_argv[index + 1] = argv[index];
+    }
+    child_argv[index + 1] = NULL;
+
+    execvp(child_argv[0], child_argv);
+    fprintf(stderr, "%s: execvp: %s\n", child_argv[0], strerror(errno));
+    _exit(127);
+}
+
+static int execute_pipeline(int command_count, int *argc_list, char ***argv_list)
+{
+    int pipes[MAX_PIPE_COMMANDS - 1][2];
+    pid_t pids[MAX_PIPE_COMMANDS];
+    int created_pipes = 0;
+    int started_children = 0;
+    int command_index;
+    int last_status = 0;
+
+    if (command_count <= 0) {
+        return 0;
+    }
+
+    if (shell_program_path == NULL || shell_program_path[0] == '\0') {
+        shell_program_path = "./busybox_shell";
+    }
+
+    for (command_index = 0; command_index < command_count - 1; command_index++) {
+        if (pipe(pipes[command_index]) < 0) {
+            fprintf(stderr, "pipe: %s\n", strerror(errno));
+            return 1;
+        }
+        created_pipes++;
+    }
+
+    for (command_index = 0; command_index < command_count; command_index++) {
+        pid_t pid = fork();
+
+        if (pid < 0) {
+            fprintf(stderr, "fork: %s\n", strerror(errno));
+            last_status = 1;
+            break;
+        }
+
+        if (pid == 0) {
+            int pipe_index;
+
+            if (command_index > 0 &&
+                dup2(pipes[command_index - 1][0], STDIN_FILENO) < 0) {
+                fprintf(stderr, "dup2: %s\n", strerror(errno));
+                _exit(1);
+            }
+
+            if (command_index < command_count - 1 &&
+                dup2(pipes[command_index][1], STDOUT_FILENO) < 0) {
+                fprintf(stderr, "dup2: %s\n", strerror(errno));
+                _exit(1);
+            }
+
+            for (pipe_index = 0; pipe_index < created_pipes; pipe_index++) {
+                close(pipes[pipe_index][0]);
+                close(pipes[pipe_index][1]);
+            }
+
+            run_exec_child(argc_list[command_index], argv_list[command_index]);
+        }
+
+        pids[started_children++] = pid;
+    }
+
+    for (command_index = 0; command_index < created_pipes; command_index++) {
+        close(pipes[command_index][0]);
+        close(pipes[command_index][1]);
+    }
+
+    for (command_index = 0; command_index < started_children; command_index++) {
+        int status;
+
+        if (waitpid(pids[command_index], &status, 0) < 0) {
+            fprintf(stderr, "waitpid: %s\n", strerror(errno));
+            last_status = 1;
+            continue;
+        }
+
+        if (command_index == started_children - 1) {
+            if (WIFEXITED(status)) {
+                last_status = WEXITSTATUS(status);
+            } else if (WIFSIGNALED(status)) {
+                last_status = 128 + WTERMSIG(status);
+            } else {
+                last_status = 1;
+            }
+        }
+    }
+
+    return last_status;
+}
+
+static int dispatch_pipeline_from_argv(int argc, char **argv)
+{
+    char **argv_list[MAX_PIPE_COMMANDS];
+    int argc_list[MAX_PIPE_COMMANDS];
+    int command_count = 0;
+    int index = 0;
+
+    while (index < argc) {
+        if (command_count >= MAX_PIPE_COMMANDS) {
+            fprintf(stderr, "Too many pipeline commands; maximum is %d\n", MAX_PIPE_COMMANDS);
+            return 1;
+        }
+
+        argv_list[command_count] = &argv[index];
+        argc_list[command_count] = 0;
+
+        while (index < argc && strcmp(argv[index], "|") != 0) {
+            argc_list[command_count]++;
+            index++;
+        }
+
+        if (argc_list[command_count] == 0) {
+            fprintf(stderr, "Invalid empty command in pipeline\n");
+            return 1;
+        }
+
+        if (index < argc) {
+            argv[index] = NULL;
+            index++;
+        }
+
+        command_count++;
+    }
+
+    return execute_pipeline(command_count, argc_list, argv_list);
+}
+
+static int dispatch_pipeline_line(const char *line)
+{
+    char copy[MAX_INPUT];
+    char *segments[MAX_PIPE_COMMANDS];
+    char *argv_storage[MAX_PIPE_COMMANDS][MAX_ARGS];
+    char **argv_list[MAX_PIPE_COMMANDS];
+    int argc_list[MAX_PIPE_COMMANDS];
+    int command_count = 0;
+    char *segment;
+
+    snprintf(copy, sizeof(copy), "%s", line);
+    segment = strtok(copy, "|");
+
+    while (segment != NULL) {
+        if (command_count >= MAX_PIPE_COMMANDS) {
+            fprintf(stderr, "Too many pipeline commands; maximum is %d\n", MAX_PIPE_COMMANDS);
+            return 1;
+        }
+
+        segments[command_count] = segment;
+        command_count++;
+        segment = strtok(NULL, "|");
+    }
+
+    for (int index = 0; index < command_count; index++) {
+        argc_list[index] = split_line(segments[index], argv_storage[index], MAX_ARGS);
+        if (argc_list[index] == 0) {
+            fprintf(stderr, "Invalid empty command in pipeline\n");
+            return 1;
+        }
+        argv_list[index] = argv_storage[index];
+    }
+
+    return execute_pipeline(command_count, argc_list, argv_list);
+}
+
 static void lowercase_copy(char *out, size_t out_size, const char *in)
 {
     size_t index = 0;
@@ -1432,6 +1631,10 @@ static int dispatch_command_line(const char *command)
     char *argv[MAX_ARGS];
     int argc;
 
+    if (line_contains_pipe(command)) {
+        return dispatch_pipeline_line(command);
+    }
+
     snprintf(copy, sizeof(copy), "%s", command);
     argc = split_line(copy, argv, MAX_ARGS);
     return dispatch_command(argc, argv);
@@ -1653,8 +1856,12 @@ static int run_interactive_shell(void)
             continue;
         }
 
-        argc = split_line(line, argv, MAX_ARGS);
-        status = dispatch_command(argc, argv);
+        if (line_contains_pipe(line)) {
+            status = dispatch_pipeline_line(line);
+        } else {
+            argc = split_line(line, argv, MAX_ARGS);
+            status = dispatch_command(argc, argv);
+        }
 
         if (status < 0) {
             if (interactive_terminal) {
@@ -1670,12 +1877,17 @@ int main(int argc, char **argv)
 {
     int status;
 
+    shell_program_path = argv[0];
     register_all_builtin_commands();
 
     if (argc < 2) {
         return run_interactive_shell();
     }
 
-    status = dispatch_command(argc - 1, argv + 1);
+    if (argv_contains_pipe(argc - 1, argv + 1)) {
+        status = dispatch_pipeline_from_argv(argc - 1, argv + 1);
+    } else {
+        status = dispatch_command(argc - 1, argv + 1);
+    }
     return status < 0 ? 0 : status;
 }

@@ -264,6 +264,14 @@ run_test "clear runs" './busybox_shell clear'
 run_test "clear help prints description" './busybox_shell clear -h | grep -q "Clear the terminal screen."'
 run_test "clear json reports cleared" './busybox_shell clear --json | grep -q "\"cleared\":true"'
 
+print_section "Testing process and thread support"
+run_test "pipeline uses process path" './busybox_shell echo alpha beta gamma "|" wc -w | grep -q "3"'
+run_test "binary imports process calls" 'nm -u ./busybox_shell | grep -Eq "(_fork| fork|_execvp| execvp)"'
+run_test "threads command starts workers" './busybox_shell threads -n 3 | grep -q "started 3 threads"'
+run_test "threads command joins workers" './busybox_shell threads -n 3 | grep -q "thread 3 result 9"'
+run_test "threads json includes count" './busybox_shell threads --json -n 2 | grep -q "\"threads\":2"'
+run_test "binary imports pthread calls" 'nm -u ./busybox_shell | grep -Eq "pthread_create|_pthread_create"'
+
 print_section "Testing file/path commands"
 run_test "pwd json includes cwd" './busybox_shell pwd --json | grep -q "\"cwd\":"'
 run_test "pwd -P prints physical cwd" './busybox_shell pwd -P | grep -q "$PWD"'
