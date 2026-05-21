@@ -25,6 +25,7 @@ SRC = main.c \
       cmd_rm.c \
       cmd_dirname.c \
       cmd_du.c \
+      cmd_procinfo.c \
       cmd_threads.c \
       registry.c \
       register_all_commands.c \

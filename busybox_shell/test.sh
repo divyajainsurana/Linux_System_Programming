@@ -266,10 +266,22 @@ run_test "clear json reports cleared" './busybox_shell clear --json | grep -q "\
 
 print_section "Testing process and thread support"
 run_test "pipeline uses process path" './busybox_shell echo alpha beta gamma "|" wc -w | grep -q "3"'
+run_test "pipeline counts four words" './busybox_shell echo one two three four "|" wc -w | grep -q "4"'
+run_test "pipeline counts echoed bytes" './busybox_shell echo hello "|" wc -c | grep -q "6"'
+run_test "pipeline wc json includes word count" './busybox_shell echo alpha beta "|" wc --json | grep -q "\"words\":2"'
+run_test "three command pipeline runs" './busybox_shell echo alpha beta gamma "|" wc -w "|" wc -c | grep -q "9"'
+run_test "pipeline returns last command failure" '! ./busybox_shell echo hello "|" missing-command'
 run_test "binary imports process calls" 'nm -u ./busybox_shell | grep -Eq "(_fork| fork|_execvp| execvp)"'
+run_test "procinfo prints process ids" './busybox_shell procinfo | grep -Eq "pid=[0-9]+ ppid=[0-9]+"'
+run_test "procinfo json includes pid" './busybox_shell procinfo --json | grep -q "\"pid\":"'
+run_test "procinfo can run in pipeline" './busybox_shell procinfo "|" wc -w | grep -q "2"'
 run_test "threads command starts workers" './busybox_shell threads -n 3 | grep -q "started 3 threads"'
-run_test "threads command joins workers" './busybox_shell threads -n 3 | grep -q "thread 3 result 9"'
+run_test "threads command joins workers" './busybox_shell threads -n 3 | grep -Eq "thread 3 id [0-9]+ result 9"'
+run_test "threads command prints mutex sum" './busybox_shell threads -n 3 | grep -q "sum 14"'
+run_test "threads command supports sleep" './busybox_shell threads -n 2 --sleep 1 | grep -q "started 2 threads"'
 run_test "threads json includes count" './busybox_shell threads --json -n 2 | grep -q "\"threads\":2"'
+run_test "threads json includes sum" './busybox_shell threads --json -n 2 | grep -q "\"sum\":5"'
+run_test "threads json includes thread ids" './busybox_shell threads --json -n 2 | grep -q "\"thread_id\":"'
 run_test "binary imports pthread calls" 'nm -u ./busybox_shell | grep -Eq "pthread_create|_pthread_create"'
 
 print_section "Testing file/path commands"

@@ -20,6 +20,7 @@ void register_mv_command(void);
 void register_rm_command(void);
 void register_dirname_command(void);
 void register_du_command(void);
+void register_procinfo_command(void);
 void register_threads_command(void);
 
 void register_all_builtin_commands(void)
@@ -45,5 +46,6 @@ void register_all_builtin_commands(void)
     register_rm_command();
     register_dirname_command();
     register_du_command();
+    register_procinfo_command();
     register_threads_command();
 }

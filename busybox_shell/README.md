@@ -213,6 +213,7 @@ mv          move or rename files
 rm          remove files
 dirname     print directory portion of paths
 du          show disk usage
+procinfo    print process identifiers
 threads     run a POSIX threads demo
 ```
 
@@ -278,6 +279,71 @@ The output of the first process becomes the input of the second process:
 
 ```text
        3
+```
+
+You can also run a longer pipeline:
+
+```sh
+./busybox_shell echo alpha beta gamma "|" wc -w "|" wc -c
+```
+
+Illustration:
+
+```text
+child 1                 child 2              child 3
+busybox_shell echo  -->  busybox_shell wc  --> busybox_shell wc
+alpha beta gamma        -w                   -c
+        |                    |                    |
+        | writes text        | counts words       | counts bytes
+        v                    v                    v
+  alpha beta gamma\n         3\n                  9\n
+```
+
+The quoted `"|"` is important when running from your real terminal shell. It
+keeps the pipe token as an argument for `busybox_shell`, so this shell can build
+the pipeline itself.
+
+### `procinfo`
+
+The `procinfo` command makes process IDs visible:
+
+```sh
+./busybox_shell procinfo
+```
+
+Example output:
+
+```text
+pid=29587 ppid=29579
+```
+
+`pid` is the process ID for the currently running command. `ppid` is the parent
+process ID. In a pipeline, each stage runs in a child process:
+
+```sh
+./busybox_shell procinfo "|" wc -w
+```
+
+Illustration:
+
+```text
+parent busybox_shell
+  |
+  +-- child process: busybox_shell procinfo
+  |       output: pid=... ppid=...
+  |
+  +-- child process: busybox_shell wc -w
+          output: 2
+```
+
+JSON is available too:
+
+```sh
+./busybox_shell procinfo --json
+```
+
+```json
+{"pid":29579,"ppid":26620}
 ```
 
 ### `fork()`
@@ -362,10 +428,38 @@ Output:
 
 ```text
 started 3 threads
-thread 1 result 1
-thread 2 result 4
-thread 3 result 9
+thread 1 id 123145460346880 result 1
+thread 2 id 123145460883456 result 4
+thread 3 id 123145461420032 result 9
+sum 14
 ```
+
+Each worker calculates the square of its worker number:
+
+```text
+worker 1 -> 1 * 1 -> 1
+worker 2 -> 2 * 2 -> 4
+worker 3 -> 3 * 3 -> 9
+```
+
+The shared `sum` is updated through a mutex:
+
+```text
+thread 1 result 1 --+
+thread 2 result 4 --+--> pthread_mutex_lock() --> shared sum --> pthread_mutex_unlock()
+thread 3 result 9 --+
+
+final sum = 1 + 4 + 9 = 14
+```
+
+You can add a small delay to each worker:
+
+```sh
+./busybox_shell threads -n 2 --sleep 1
+```
+
+`--sleep` takes milliseconds. It is useful when you want to make concurrent
+worker execution easier to observe.
 
 JSON output is also available:
 
@@ -374,7 +468,28 @@ JSON output is also available:
 ```
 
 ```json
-{"threads":2,"results":[{"worker":1,"result":1},{"worker":2,"result":4}]}
+{"threads":2,"sleep_ms":0,"sum":5,"results":[{"worker":1,"thread_id":123145322487808,"result":1},{"worker":2,"thread_id":123145323024384,"result":4}]}
+```
+
+Process pipelines and threads are different:
+
+```text
+Pipeline with processes:
+
+parent shell
+  |
+  +-- child process 1: own memory, own command execution
+  +-- child process 2: own memory, own command execution
+
+Threads:
+
+one process
+  |
+  +-- thread 1
+  +-- thread 2
+  +-- thread 3
+
+threads share memory, so shared data needs synchronization
 ```
 
 ### Quick Verification
@@ -405,6 +520,8 @@ All built-in commands support `--json` output. Examples:
 ./busybox_shell pkg --json
 ./busybox_shell id --json
 ./busybox_shell uname --json
+./busybox_shell procinfo --json
+./busybox_shell threads --json -n 2
 ./busybox_shell wc --json README.md
 ./busybox_shell cat --json README.md
 ./busybox_shell head --json -n 5 README.md
