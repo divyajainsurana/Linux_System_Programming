@@ -384,52 +384,104 @@ make test
 
 ## Test Cases
 
-The following table is presentation-friendly coverage for the grammar-backed
-shell path. The command column shows what is being tested; the expected result
-summarizes the observable behavior.
+The following table is a fuller test matrix for the grammar-backed shell path.
+The `Mode` column says whether the case is covered by `make test-bnfc`,
+`make test`, or should be checked manually during a demo.
 
-| No. | Area | Test command/input | Expected result |
-|---:|---|---|---|
-| 1 | Build | `make` | Generates BNFC parser files and builds `busybox_shell`. |
-| 2 | BNFC parser only | `cd bnfc && printf "echo hello \| wc > out.txt\n" \| ./TestInput` | Prints `Parse Successful`, abstract syntax, and linearized tree. |
-| 3 | Direct command | `./busybox_shell localdate` | Prints local date. |
-| 4 | Direct command help | `./busybox_shell localdate -h` | Prints `localdate` usage text. |
-| 5 | Package command | `./busybox_shell pkg` | Prints package name, version, description, and command list. |
-| 6 | Package help | `./busybox_shell pkg -h` | Prints `pkg` usage and subcommands. |
-| 7 | Working directory | `./busybox_shell pwd` | Prints current directory. |
-| 8 | Echo | `./busybox_shell echo hello grammar` | Prints `hello grammar`. |
-| 9 | Echo no newline | `./busybox_shell echo -n hello` | Prints `hello` without trailing newline. |
-| 10 | List file | `./busybox_shell ls Makefile` | Prints `Makefile`. |
-| 11 | List all | `./busybox_shell ls -a` | Includes `.` and project files. |
-| 12 | Cat file | `./busybox_shell cat Makefile` | Prints contents of `Makefile`. |
-| 13 | Word count | `./busybox_shell wc Makefile` | Prints line, word, and byte counts. |
-| 14 | Current user | `./busybox_shell whoami` | Prints current username. |
-| 15 | User IDs | `./busybox_shell id` | Prints `uid=` and `gid=` information. |
-| 16 | System name | `./busybox_shell uname` | Prints system name such as `Darwin`. |
-| 17 | Head | `./busybox_shell head -n 1 test_bnfc_lines.tmp` | Prints first line. |
-| 18 | Tail | `./busybox_shell tail -n 1 test_bnfc_lines.tmp` | Prints last line. |
-| 19 | Touch | `./busybox_shell touch test_bnfc_touch.tmp` | Creates or updates file. |
-| 20 | Make directory | `./busybox_shell mkdir -p test_bnfc_dir/subdir` | Creates nested directory. |
-| 21 | Copy | `./busybox_shell cp test_bnfc_lines.tmp test_bnfc_copy.tmp` | Creates copied file. |
-| 22 | Move | `./busybox_shell mv test_bnfc_copy.tmp test_bnfc_move.tmp` | Renames copied file. |
-| 23 | Dirname | `./busybox_shell dirname a/b/c` | Prints `a/b`. |
-| 24 | Disk usage | `./busybox_shell du test_bnfc_move.tmp` | Prints disk usage and file name. |
-| 25 | Process info | `./busybox_shell procinfo` | Prints process identifiers. |
-| 26 | Threads demo | `./busybox_shell threads` | Starts worker threads and prints results. |
-| 27 | Remove file | `./busybox_shell rm test_bnfc_lines.tmp test_bnfc_move.tmp test_bnfc_touch.tmp` | Removes test files. |
-| 28 | Remove directory | `./busybox_shell rmdir test_bnfc_dir/subdir` | Removes empty subdirectory. |
-| 29 | Remove parent directory | `./busybox_shell rmdir test_bnfc_dir` | Removes empty parent directory. |
-| 30 | Clear | `./busybox_shell clear > /dev/null` | Runs clear command without visible output. |
-| 31 | Interactive simple command | `printf "echo hello\nexit\n" \| ./busybox_shell` | Shell prints `hello`. |
-| 32 | Interactive pipeline | `printf "echo hello \| wc\nexit\n" \| ./busybox_shell` | Shell prints count output from `wc`. |
-| 33 | Interactive semicolon | `printf "pwd ; echo done\nexit\n" \| ./busybox_shell` | Shell prints current directory and `done`. |
-| 34 | Output redirection | `printf "echo hello > test_bnfc_out.tmp\ncat test_bnfc_out.tmp\nrm test_bnfc_out.tmp\nexit\n" \| ./busybox_shell` | File receives `hello`, then `cat` prints it. |
-| 35 | Pipeline with output redirection | `printf "echo hello \| wc > test_bnfc_out.tmp\ncat test_bnfc_out.tmp\nrm test_bnfc_out.tmp\nexit\n" \| ./busybox_shell` | File receives `wc` output, then `cat` prints it. |
-| 36 | Input redirection with pipeline | `printf "cat \| head -n 1 < Makefile\nexit\n" \| ./busybox_shell` | Prints first line of `Makefile`. |
-| 37 | Natural language date | `@ show today's date` | Suggests `localdate`; if accepted, runs through BNFC command path. |
-| 38 | Natural language list | `@ list files` | Suggests `ls`; if accepted, runs through BNFC command path. |
-| 39 | Natural language count | `@ count words in Makefile` | Suggests `wc Makefile`; if accepted, runs through BNFC command path. |
-| 40 | Natural language safety | helper suggests `echo hi ; rm file` | Rejected by safety validation because complex shell operators are not allowed. |
+| ID | Category | Test command/input | Expected result | Mode |
+|---:|---|---|---|---|
+| 01.01 | Build | `make` | Generates BNFC parser files and builds `busybox_shell`. | Automated |
+| 01.02 | Build | `make clean` | Removes shell binary, object files, and generated BNFC files. | Automated |
+| 01.03 | Build | `make test-bnfc` | Runs grammar-backed command coverage. | Automated |
+| 01.04 | Build | `make test` | Runs broader shell regression tests. | Automated |
+| 01.05 | Branch setup | `git branch --show-current` | Shows `week08`. | Manual |
+| 02.01 | Parser only | `cd bnfc && make test` | Prints parsed AST for sample pipeline/redirection input. | Automated |
+| 02.02 | Parser only | `printf "echo hello\n" \| ./TestInput` | Prints `Parse Successful`. | Manual |
+| 02.03 | Parser only | `printf "echo hello \| wc\n" \| ./TestInput` | Prints AST with `PipeCommand`. | Manual |
+| 02.04 | Parser only | `printf "pwd ; echo done\n" \| ./TestInput` | Prints AST with multiple jobs. | Manual |
+| 02.05 | Parser only | `printf "echo hello > out.txt\n" \| ./TestInput` | Prints AST with `OutputRedirection`. | Manual |
+| 02.06 | Parser only | `printf "cat < Makefile\n" \| ./TestInput` | Prints AST with `InputRedirection`. | Manual |
+| 02.07 | Parser only | `printf "sleep 5 &\n" \| ./TestInput` | Prints AST with `BackgroundJob`. | Manual |
+| 02.08 | Parser only | `printf "cat < Makefile \| head\n" \| ./TestInput` | Fails because per-command pipeline redirection is not supported yet. | Manual |
+| 03.01 | Direct command | `./busybox_shell localdate` | Prints local date. | Automated |
+| 03.02 | Direct command | `./busybox_shell pkg` | Prints package name, version, description, and command list. | Automated |
+| 03.03 | Direct command | `./busybox_shell pwd` | Prints current directory. | Automated |
+| 03.04 | Direct command | `./busybox_shell echo hello grammar` | Prints `hello grammar`. | Automated |
+| 03.05 | Direct command | `./busybox_shell echo -n hello` | Prints `hello` without trailing newline. | Automated |
+| 03.06 | Direct command | `./busybox_shell ls Makefile` | Prints `Makefile`. | Automated |
+| 03.07 | Direct command | `./busybox_shell cat Makefile` | Prints contents of `Makefile`. | Automated |
+| 03.08 | Direct command | `./busybox_shell wc Makefile` | Prints line, word, and byte counts. | Automated |
+| 03.09 | Direct command | `./busybox_shell whoami` | Prints current username. | Automated |
+| 03.10 | Direct command | `./busybox_shell id` | Prints `uid=` and `gid=` information. | Automated |
+| 03.11 | Direct command | `./busybox_shell uname` | Prints system name such as `Darwin`. | Automated |
+| 03.12 | Direct command | `./busybox_shell procinfo` | Prints process identifiers. | Automated |
+| 03.13 | Direct command | `./busybox_shell threads` | Starts worker threads and prints results. | Automated |
+| 04.01 | Command options | `./busybox_shell localdate -h` | Prints `localdate` usage text. | Automated |
+| 04.02 | Command options | `./busybox_shell pkg -h` | Prints `pkg` usage and subcommands. | Automated |
+| 04.03 | Command options | `./busybox_shell ls -a` | Lists hidden and normal files. | Automated |
+| 04.04 | Command options | `./busybox_shell ls -l` | Prints long listing. | Manual |
+| 04.05 | Command options | `./busybox_shell ls -r` | Prints reversed listing. | Manual |
+| 04.06 | Command options | `./busybox_shell ls -S` | Sorts by size. | Manual |
+| 04.07 | Command options | `./busybox_shell head -n 1 test_bnfc_lines.tmp` | Prints first line. | Automated |
+| 04.08 | Command options | `./busybox_shell tail -n 1 test_bnfc_lines.tmp` | Prints last line. | Automated |
+| 04.09 | Command options | `./busybox_shell mkdir -p test_bnfc_dir/subdir` | Creates nested directory. | Automated |
+| 04.10 | Command options | `./busybox_shell clear > /dev/null` | Runs clear command without visible output. | Automated |
+| 05.01 | File command | `./busybox_shell touch test_bnfc_touch.tmp` | Creates or updates file. | Automated |
+| 05.02 | File command | `./busybox_shell cp test_bnfc_lines.tmp test_bnfc_copy.tmp` | Creates copied file. | Automated |
+| 05.03 | File command | `./busybox_shell mv test_bnfc_copy.tmp test_bnfc_move.tmp` | Renames copied file. | Automated |
+| 05.04 | File command | `./busybox_shell dirname a/b/c` | Prints `a/b`. | Automated |
+| 05.05 | File command | `./busybox_shell du test_bnfc_move.tmp` | Prints disk usage and file name. | Automated |
+| 05.06 | File command | `./busybox_shell rm test_bnfc_lines.tmp test_bnfc_move.tmp test_bnfc_touch.tmp` | Removes test files. | Automated |
+| 05.07 | File command | `./busybox_shell rmdir test_bnfc_dir/subdir` | Removes empty subdirectory. | Automated |
+| 05.08 | File command | `./busybox_shell rmdir test_bnfc_dir` | Removes empty parent directory. | Automated |
+| 06.01 | JSON | `./busybox_shell help --json` | Prints JSON command catalog. | Manual |
+| 06.02 | JSON | `./busybox_shell help ls --json` | Prints JSON metadata for `ls`. | Manual |
+| 06.03 | JSON | `./busybox_shell ls --json` | Prints JSON directory listing. | Manual |
+| 06.04 | JSON | `./busybox_shell pkg --json` | Prints JSON package metadata. | Manual |
+| 06.05 | JSON | `./busybox_shell id --json` | Prints JSON user/group IDs. | Manual |
+| 06.06 | JSON | `./busybox_shell uname --json` | Prints JSON system metadata. | Manual |
+| 06.07 | JSON | `./busybox_shell procinfo --json` | Prints JSON process information. | Manual |
+| 06.08 | JSON | `./busybox_shell threads --json -n 2` | Prints JSON thread-demo result. | Manual |
+| 06.09 | JSON | `./busybox_shell wc --json Makefile` | Prints JSON word-count output. | Manual |
+| 06.10 | JSON | `./busybox_shell echo --json hello` | Prints JSON echo output. | Manual |
+| 07.01 | Interactive | `printf "echo hello\nexit\n" \| ./busybox_shell` | Shell prints `hello`. | Automated |
+| 07.02 | Interactive | `printf "localdate\nexit\n" \| ./busybox_shell` | Shell prints local date. | Automated |
+| 07.03 | Interactive | `printf "pkg\nexit\n" \| ./busybox_shell` | Shell prints package metadata. | Automated |
+| 07.04 | Interactive | `printf "pwd\nexit\n" \| ./busybox_shell` | Shell prints current directory. | Automated |
+| 07.05 | Interactive | `printf "help mkdir\nexit\n" \| ./busybox_shell` | Shell prints `mkdir` usage. | Automated |
+| 08.01 | Pipeline | `printf "echo hello \| wc\nexit\n" \| ./busybox_shell` | Shell prints count output from `wc`. | Automated |
+| 08.02 | Pipeline | `printf "cat Makefile \| head -n 1\nexit\n" \| ./busybox_shell` | Prints first line of `Makefile`. | Manual |
+| 08.03 | Pipeline | `printf "cat Makefile \| wc\nexit\n" \| ./busybox_shell` | Prints count output from `wc`. | Manual |
+| 08.04 | Pipeline | `printf "echo hello \| wc \| cat\nexit\n" \| ./busybox_shell` | Executes three-command pipeline. | Manual |
+| 09.01 | Semicolon jobs | `printf "pwd ; echo done\nexit\n" \| ./busybox_shell` | Prints current directory and `done`. | Automated |
+| 09.02 | Semicolon jobs | `printf "echo one ; echo two ; echo three\nexit\n" \| ./busybox_shell` | Prints three lines in order. | Manual |
+| 09.03 | Semicolon jobs | `printf "localdate ; whoami\nexit\n" \| ./busybox_shell` | Prints date and username. | Manual |
+| 10.01 | Redirection | `printf "echo hello > test_bnfc_out.tmp\ncat test_bnfc_out.tmp\nrm test_bnfc_out.tmp\nexit\n" \| ./busybox_shell` | File receives `hello`, then `cat` prints it. | Automated |
+| 10.02 | Redirection | `printf "echo hello \| wc > test_bnfc_out.tmp\ncat test_bnfc_out.tmp\nrm test_bnfc_out.tmp\nexit\n" \| ./busybox_shell` | File receives `wc` output, then `cat` prints it. | Automated |
+| 10.03 | Redirection | `printf "cat \| head -n 1 < Makefile\nexit\n" \| ./busybox_shell` | Prints first line of `Makefile`. | Automated |
+| 10.04 | Redirection | `printf "cat < Makefile \| head -n 1\nexit\n" \| ./busybox_shell` | Fails safely; per-command redirection inside a pipeline is not supported yet. | Manual |
+| 10.05 | Redirection | `printf "echo hello >> out.txt\nexit\n" \| ./busybox_shell` | Fails safely; append redirection is not implemented yet. | Manual |
+| 11.01 | Natural language | `@ show today's date` | Suggests `localdate`; if accepted, runs through BNFC command path. | Manual |
+| 11.02 | Natural language | `@ list files` | Suggests `ls`; if accepted, runs through BNFC command path. | Manual |
+| 11.03 | Natural language | `@ where am I` | Suggests `pwd`; if accepted, runs through BNFC command path. | Manual |
+| 11.04 | Natural language | `@ print hello` | Suggests `echo hello`; if accepted, runs through BNFC command path. | Manual |
+| 11.05 | Natural language | `@ help of ls` | Suggests `help ls`; if accepted, prints help. | Manual |
+| 11.06 | Natural language | `@ count words in Makefile` | Suggests `wc Makefile`; if accepted, runs through BNFC command path. | Manual |
+| 11.07 | Natural language | `@ show first lines of Makefile` | Suggests `head Makefile`; if accepted, runs through BNFC command path. | Manual |
+| 11.08 | Natural language | `@ show last lines of Makefile` | Suggests `tail Makefile`; if accepted, runs through BNFC command path. | Manual |
+| 11.09 | Natural language | `@ list files as json` | Suggests `ls --json`; if accepted, runs through BNFC command path. | Manual |
+| 11.10 | Natural language safety | helper suggests `echo hi ; rm file` | Rejected by safety validation because complex shell operators are not allowed. | Manual |
+| 12.01 | Unsupported syntax | `printf "echo \"hello world\"\nexit\n" \| ./busybox_shell` | Fails safely; quoted strings are not implemented yet. | Manual |
+| 12.02 | Unsupported syntax | `printf "x=hello\nexit\n" \| ./busybox_shell` | Fails safely; shell variables are not implemented yet. | Manual |
+| 12.03 | Unsupported syntax | `printf "echo $HOME\nexit\n" \| ./busybox_shell` | Fails safely; variable expansion is not implemented yet. | Manual |
+| 12.04 | Unsupported syntax | `printf "sleep 5 &\nexit\n" \| ./busybox_shell` | Parses background job, but execution reports it is not implemented yet. | Manual |
+| 12.05 | Unsupported syntax | `printf "echo hi && echo bye\nexit\n" \| ./busybox_shell` | Fails safely; logical operators are not implemented yet. | Manual |
+| 12.06 | Unsupported syntax | `printf "echo hi || echo bye\nexit\n" \| ./busybox_shell` | Fails safely; logical operators are not implemented yet. | Manual |
+| 13.01 | Error handling | `./busybox_shell unknown_command` | Reports unknown command. | Manual |
+| 13.02 | Error handling | `printf "\| wc\nexit\n" \| ./busybox_shell` | Fails safely with parse error. | Manual |
+| 13.03 | Error handling | `printf "echo hello \|\nexit\n" \| ./busybox_shell` | Fails safely with parse error. | Manual |
+| 13.04 | Error handling | `printf "cat < missing-file\nexit\n" \| ./busybox_shell` | Reports missing file error. | Manual |
+| 13.05 | Error handling | `printf "rmdir nonempty-dir\nexit\n" \| ./busybox_shell` | Reports command-specific failure. | Manual |
 
 Automated target:
 
