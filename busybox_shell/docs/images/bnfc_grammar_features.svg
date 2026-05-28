@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="460" viewBox="0 0 1120 460" role="img" aria-labelledby="title desc">
+  <title id="title">BNFC grammar feature map</title>
+  <desc id="desc">Feature map showing how a command line is parsed into jobs, pipelines, command parts, words, and redirections.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#263548"/>
+    </marker>
+    <style>
+      .root { fill: #eff6ff; stroke: #2563eb; stroke-width: 2; rx: 8; }
+      .job { fill: #ecfdf5; stroke: #047857; stroke-width: 2; rx: 8; }
+      .pipe { fill: #fefce8; stroke: #a16207; stroke-width: 2; rx: 8; }
+      .word { fill: #f8fafc; stroke: #42526e; stroke-width: 2; rx: 8; }
+      .redir { fill: #fff1f2; stroke: #be123c; stroke-width: 2; rx: 8; }
+      .text { font: 18px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #172033; }
+      .small { font: 14px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #46556a; }
+      .arrow { stroke: #263548; stroke-width: 2.5; marker-end: url(#arrow); }
+      .example { font: 15px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; fill: #172033; }
+    </style>
+  </defs>
+
+  <rect x="42" y="42" width="210" height="78" class="root"/>
+  <text x="147" y="75" text-anchor="middle" class="text">Input</text>
+  <text x="147" y="100" text-anchor="middle" class="small">one or more jobs</text>
+
+  <line x1="252" y1="81" x2="332" y2="81" class="arrow"/>
+
+  <rect x="342" y="42" width="225" height="78" class="job"/>
+  <text x="454" y="75" text-anchor="middle" class="text">Job</text>
+  <text x="454" y="100" text-anchor="middle" class="small">foreground or background</text>
+
+  <line x1="567" y1="81" x2="647" y2="81" class="arrow"/>
+
+  <rect x="657" y="42" width="238" height="78" class="pipe"/>
+  <text x="776" y="75" text-anchor="middle" class="text">CommandLine</text>
+  <text x="776" y="100" text-anchor="middle" class="small">pipeline plus redirection</text>
+
+  <line x1="776" y1="120" x2="776" y2="176" class="arrow"/>
+
+  <rect x="520" y="186" width="230" height="82" class="pipe"/>
+  <text x="635" y="220" text-anchor="middle" class="text">Pipeline</text>
+  <text x="635" y="245" text-anchor="middle" class="small">cmd or cmd | pipeline</text>
+
+  <rect x="802" y="186" width="230" height="82" class="redir"/>
+  <text x="917" y="220" text-anchor="middle" class="text">Redirection</text>
+  <text x="917" y="245" text-anchor="middle" class="small">&lt; file or &gt; file</text>
+
+  <line x1="750" y1="227" x2="792" y2="227" class="arrow"/>
+  <line x1="635" y1="268" x2="635" y2="324" class="arrow"/>
+
+  <rect x="520" y="334" width="230" height="82" class="word"/>
+  <text x="635" y="368" text-anchor="middle" class="text">CommandPart</text>
+  <text x="635" y="393" text-anchor="middle" class="small">command word + arg words</text>
+
+  <rect x="42" y="186" width="390" height="230" class="word"/>
+  <text x="237" y="220" text-anchor="middle" class="text">Examples</text>
+  <text x="68" y="265" class="example">echo hello</text>
+  <text x="68" y="300" class="example">echo hello | wc</text>
+  <text x="68" y="335" class="example">pwd ; echo done</text>
+  <text x="68" y="370" class="example">cat | head -n 1 &lt; Makefile</text>
+
+  <text x="916" y="334" text-anchor="middle" class="small">Word token accepts letters, digits,</text>
+  <text x="916" y="356" text-anchor="middle" class="small">_, ., /, -, and backslash.</text>
+  <text x="916" y="392" text-anchor="middle" class="small">Quoted strings, variables, &&, ||,</text>
+  <text x="916" y="414" text-anchor="middle" class="small">and append &gt;&gt; are future grammar work.</text>
+</svg>
