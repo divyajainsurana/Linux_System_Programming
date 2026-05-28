@@ -70,8 +70,10 @@ int echo_run(int argc, char **argv)
         return ferror(stdout) ? 1 : 0;
     }
 
+    int text_start = index;
+
     for (; index < argc; index++) {
-        if (index > (trailing_newline ? 1 : 2)) {
+        if (index > text_start) {
             putchar(' ');
         }
         if (interpret_escapes) {

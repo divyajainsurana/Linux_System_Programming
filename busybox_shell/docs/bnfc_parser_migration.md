@@ -382,6 +382,92 @@ The broader regression test still works:
 make test
 ```
 
+## Example Fix: `echo -e` With Escaped Newlines
+
+One regression test exposed an important parser/detail bug:
+
+```sh
+./busybox_shell echo -e 'a\nb' | grep -q '^b$'
+```
+
+Expected behavior:
+
+```text
+a
+b
+```
+
+The test checks that `echo -e` turns `\n` into a real newline and that the
+second line contains `b`.
+
+### Why It Failed
+
+There were two separate issues.
+
+First, the BNFC grammar did not allow backslash characters inside a `Word`
+token. The grammar accepted letters, digits, `_`, `.`, `/`, and `-`, but not
+`\`. That meant this argument could not be parsed correctly:
+
+```text
+a\nb
+```
+
+Second, `cmd_echo.c` had spacing logic that depended on a hard-coded argument
+position. That worked for some simple cases, but options such as `-e`, `-E`,
+and `-n` move the first real text argument to a different index.
+
+### Grammar Fix
+
+The `Word` token in `busybox_shell/bnfc/Grammar.cf` was updated to accept a
+backslash:
+
+```bnf
+token Word ((letter | digit | '_' | '.' | '/' | '-' | '\\')+) ;
+```
+
+This lets BNFC parse arguments such as:
+
+```text
+a\nb
+```
+
+### Echo Spacing Fix
+
+After parsing options, `cmd_echo.c` now remembers where the text arguments
+start:
+
+```c
+int text_start = index;
+
+for (; index < argc; index++) {
+    if (index > text_start) {
+        putchar(' ');
+    }
+    ...
+}
+```
+
+This makes spacing depend on the actual first text argument instead of a fixed
+argument number.
+
+### Verification
+
+The fixed command:
+
+```sh
+./busybox_shell echo -e 'a\nb' | grep -q '^b$'
+echo $?
+```
+
+Expected result:
+
+```text
+0
+```
+
+This confirms that the command prints a real newline and that the pipeline can
+find `b` on its own line.
+
 ## Test Cases
 
 The following table is a fuller test matrix for the grammar-backed shell path.
@@ -408,14 +494,15 @@ The `Mode` column says whether the case is covered by `make test-bnfc`,
 | 03.03 | Direct command | `./busybox_shell pwd` | Prints current directory. | Automated |
 | 03.04 | Direct command | `./busybox_shell echo hello grammar` | Prints `hello grammar`. | Automated |
 | 03.05 | Direct command | `./busybox_shell echo -n hello` | Prints `hello` without trailing newline. | Automated |
-| 03.06 | Direct command | `./busybox_shell ls Makefile` | Prints `Makefile`. | Automated |
-| 03.07 | Direct command | `./busybox_shell cat Makefile` | Prints contents of `Makefile`. | Automated |
-| 03.08 | Direct command | `./busybox_shell wc Makefile` | Prints line, word, and byte counts. | Automated |
-| 03.09 | Direct command | `./busybox_shell whoami` | Prints current username. | Automated |
-| 03.10 | Direct command | `./busybox_shell id` | Prints `uid=` and `gid=` information. | Automated |
-| 03.11 | Direct command | `./busybox_shell uname` | Prints system name such as `Darwin`. | Automated |
-| 03.12 | Direct command | `./busybox_shell procinfo` | Prints process identifiers. | Automated |
-| 03.13 | Direct command | `./busybox_shell threads` | Starts worker threads and prints results. | Automated |
+| 03.06 | Direct command | `./busybox_shell echo -e 'a\nb' \| grep -q '^b$'` | Confirms escaped newline handling through BNFC and `echo`. | Automated |
+| 03.07 | Direct command | `./busybox_shell ls Makefile` | Prints `Makefile`. | Automated |
+| 03.08 | Direct command | `./busybox_shell cat Makefile` | Prints contents of `Makefile`. | Automated |
+| 03.09 | Direct command | `./busybox_shell wc Makefile` | Prints line, word, and byte counts. | Automated |
+| 03.10 | Direct command | `./busybox_shell whoami` | Prints current username. | Automated |
+| 03.11 | Direct command | `./busybox_shell id` | Prints `uid=` and `gid=` information. | Automated |
+| 03.12 | Direct command | `./busybox_shell uname` | Prints system name such as `Darwin`. | Automated |
+| 03.13 | Direct command | `./busybox_shell procinfo` | Prints process identifiers. | Automated |
+| 03.14 | Direct command | `./busybox_shell threads` | Starts worker threads and prints results. | Automated |
 | 04.01 | Command options | `./busybox_shell localdate -h` | Prints `localdate` usage text. | Automated |
 | 04.02 | Command options | `./busybox_shell pkg -h` | Prints `pkg` usage and subcommands. | Automated |
 | 04.03 | Command options | `./busybox_shell ls -a` | Lists hidden and normal files. | Automated |
@@ -844,6 +931,7 @@ Updated:
 ```text
 busybox_shell/Makefile
 busybox_shell/main.c
+busybox_shell/cmd_echo.c
 ```
 
 The top-level Makefile now builds the BNFC parser before linking
@@ -864,12 +952,15 @@ $(TARGET): bnfc_parser $(SRC)
 	$(CC) $(CFLAGS) -o $(TARGET) $(SRC)
 ```
 
+`cmd_echo.c` was also adjusted after testing `echo -e 'a\nb'`. The command
+module still owns echo behavior, but its spacing logic now handles option
+parsing more cleanly.
+
 ## What Did Not Change
 
-The command modules did not need to change:
+Most command modules did not need to change:
 
 ```text
-cmd_echo.c
 cmd_ls.c
 cmd_cat.c
 cmd_wc.c
