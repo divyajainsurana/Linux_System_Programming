@@ -30,6 +30,417 @@ text line -> BNFC parser -> AST -> argc/argv or pipeline -> dispatch_command/exe
 The command registry is still the execution backend. BNFC is now the parsing
 frontend.
 
+## What We Have Implemented So Far
+
+So far, the BusyBox shell has been updated in two main ways:
+
+1. A BNFC grammar frontend was added.
+2. The shell core now uses that grammar frontend before executing commands.
+3. The existing natural-language `@` interface now feeds accepted suggestions
+   into the same grammar-backed execution path.
+
+The new parser lives in:
+
+```text
+busybox_shell/bnfc/Grammar.cf
+```
+
+The execution bridge lives in:
+
+```text
+busybox_shell/main.c
+```
+
+The top-level build now generates and links the BNFC parser automatically:
+
+```text
+busybox_shell/Makefile
+```
+
+In simple terms, the shell now does this:
+
+```text
+user input
+  -> parse with BNFC
+  -> build AST
+  -> convert AST to argv/pipeline/redirection
+  -> run existing command modules
+```
+
+Natural-language flow:
+
+```text
+@ request
+  -> built-in phrase mapper or MYSH_LLM_HELPER/Ollama helper
+  -> suggested shell command
+  -> safety validation
+  -> BNFC parser
+  -> existing command execution
+```
+
+## Commands Covered By The Grammar Path
+
+All current registered BusyBox shell commands can be reached through the BNFC
+parser path because they all reduce to normal `argc` / `argv` execution after
+parsing.
+
+Currently covered commands:
+
+```text
+localdate
+ls
+cat
+pkg
+pwd
+wc
+touch
+mkdir
+rmdir
+echo
+whoami
+clear
+id
+uname
+head
+tail
+cp
+mv
+rm
+dirname
+du
+procinfo
+threads
+```
+
+Examples:
+
+```sh
+./busybox_shell echo hello
+./busybox_shell ls Makefile
+./busybox_shell cat Makefile
+./busybox_shell wc Makefile
+./busybox_shell head -n 1 Makefile
+./busybox_shell tail -n 1 Makefile
+./busybox_shell dirname a/b/c
+```
+
+These commands now go through:
+
+```text
+BNFC parser -> AST adapter -> dispatch_command()
+```
+
+The command modules themselves were not rewritten. For example, `cmd_echo.c`
+and `cmd_ls.c` still implement the actual command behavior.
+
+## Natural-Language Interface
+
+The shell also has an interactive natural-language interface. Any interactive
+line beginning with `@` is treated as a request instead of a direct shell
+command.
+
+Example:
+
+```text
+busybox_shell> @ show today's date
+AI suggestion: localdate
+Run it? [y/N]
+```
+
+Example:
+
+```text
+busybox_shell> @ list files
+AI suggestion: ls
+Run it? [y/N]
+```
+
+Example:
+
+```text
+busybox_shell> @ count words in Makefile
+AI suggestion: wc Makefile
+Run it? [y/N]
+```
+
+Internally, the natural-language path uses:
+
+```c
+handle_natural_language_request()
+fallback_nl_to_command()
+read_helper_command()
+command_is_safe_to_dispatch()
+dispatch_command_line()
+```
+
+There are two ways suggestions are produced:
+
+1. Built-in fallback mapping for common requests.
+2. External helper integration through `MYSH_LLM_HELPER`.
+
+If `MYSH_LLM_HELPER` is not set and `./ollama_llm_helper.sh` is executable, the
+shell can use that helper.
+
+Example helper usage:
+
+```sh
+MYSH_LLM_HELPER="./ollama_llm_helper.sh" ./busybox_shell
+```
+
+The natural-language interface does not bypass the command system. A suggestion
+such as:
+
+```text
+echo hello
+```
+
+is sent back through:
+
+```text
+dispatch_command_line()
+  -> dispatch_bnfc_line()
+  -> BNFC parser
+  -> command execution
+```
+
+This means accepted `@` suggestions benefit from the same grammar-backed parser
+as normal shell input.
+
+The shell also validates suggestions before running them. It rejects unsupported
+or unsafe shell syntax such as:
+
+```text
+;
+&
+|
+<
+>
+`
+$
+(
+)
+```
+
+That validation keeps the natural-language interface conservative: the helper
+can suggest normal supported commands, but it cannot directly inject complex
+shell syntax.
+
+## Shell Syntax Implemented So Far
+
+The grammar currently supports these shell forms.
+
+Simple commands:
+
+```sh
+echo hello
+ls Makefile
+wc Makefile
+```
+
+Pipelines:
+
+```sh
+echo hello | wc
+cat Makefile | head -n 1
+```
+
+Semicolon-separated jobs:
+
+```sh
+pwd ; echo done
+```
+
+Output redirection:
+
+```sh
+echo hello > out.txt
+echo hello | wc > out.txt
+```
+
+Input redirection at the command-line level:
+
+```sh
+cat | head -n 1 < Makefile
+```
+
+Direct command mode:
+
+```sh
+./busybox_shell echo hello
+./busybox_shell ls Makefile
+```
+
+Interactive mode:
+
+```sh
+./busybox_shell
+busybox_shell> echo hello
+busybox_shell> echo hello | wc
+busybox_shell> pwd ; echo done
+```
+
+## What Happens Internally Now
+
+For a simple command:
+
+```sh
+echo hello
+```
+
+The parser builds an AST like:
+
+```text
+MkCommandPart "echo" ["hello"]
+```
+
+The adapter converts it to:
+
+```text
+argc = 2
+argv = ["echo", "hello", NULL]
+```
+
+Then the existing dispatcher runs:
+
+```c
+dispatch_command(argc, argv);
+```
+
+For a pipeline:
+
+```sh
+echo hello | wc
+```
+
+The parser builds a pipeline AST. The adapter converts it to:
+
+```text
+command_count = 2
+
+command 1: ["echo", "hello", NULL]
+command 2: ["wc", NULL]
+```
+
+Then the existing pipeline executor runs:
+
+```c
+execute_pipeline(command_count, argc_list, argv_list);
+```
+
+For redirection:
+
+```sh
+echo hello > out.txt
+```
+
+The parser records the output file in the AST. The adapter opens the file,
+redirects stdout with `dup2`, runs the command, and restores stdout afterward.
+
+## What Was Removed From Normal Command Execution
+
+Earlier, normal command execution depended on manual parsing helpers like:
+
+```text
+split_line()
+dispatch_pipeline_line()
+dispatch_pipeline_from_argv()
+```
+
+The manual pipeline helpers have been removed from the normal execution path.
+Normal command execution now goes through BNFC first.
+
+`split_line()` still exists, but it is no longer the main command parser. It is
+still used by helper logic such as natural-language command safety checks.
+
+## Verification Added
+
+A new Makefile target was added:
+
+```sh
+make test-bnfc
+```
+
+This test verifies that the registered commands work through the grammar-backed
+execution path.
+
+It covers:
+
+```text
+simple command execution
+command options
+file creation/removal commands
+copy/move commands
+process/thread demo commands
+pipelines
+semicolon-separated jobs
+redirection
+```
+
+The broader regression test still works:
+
+```sh
+make test
+```
+
+## Test Cases
+
+The following table is presentation-friendly coverage for the grammar-backed
+shell path. The command column shows what is being tested; the expected result
+summarizes the observable behavior.
+
+| No. | Area | Test command/input | Expected result |
+|---:|---|---|---|
+| 1 | Build | `make` | Generates BNFC parser files and builds `busybox_shell`. |
+| 2 | BNFC parser only | `cd bnfc && printf "echo hello \| wc > out.txt\n" \| ./TestInput` | Prints `Parse Successful`, abstract syntax, and linearized tree. |
+| 3 | Direct command | `./busybox_shell localdate` | Prints local date. |
+| 4 | Direct command help | `./busybox_shell localdate -h` | Prints `localdate` usage text. |
+| 5 | Package command | `./busybox_shell pkg` | Prints package name, version, description, and command list. |
+| 6 | Package help | `./busybox_shell pkg -h` | Prints `pkg` usage and subcommands. |
+| 7 | Working directory | `./busybox_shell pwd` | Prints current directory. |
+| 8 | Echo | `./busybox_shell echo hello grammar` | Prints `hello grammar`. |
+| 9 | Echo no newline | `./busybox_shell echo -n hello` | Prints `hello` without trailing newline. |
+| 10 | List file | `./busybox_shell ls Makefile` | Prints `Makefile`. |
+| 11 | List all | `./busybox_shell ls -a` | Includes `.` and project files. |
+| 12 | Cat file | `./busybox_shell cat Makefile` | Prints contents of `Makefile`. |
+| 13 | Word count | `./busybox_shell wc Makefile` | Prints line, word, and byte counts. |
+| 14 | Current user | `./busybox_shell whoami` | Prints current username. |
+| 15 | User IDs | `./busybox_shell id` | Prints `uid=` and `gid=` information. |
+| 16 | System name | `./busybox_shell uname` | Prints system name such as `Darwin`. |
+| 17 | Head | `./busybox_shell head -n 1 test_bnfc_lines.tmp` | Prints first line. |
+| 18 | Tail | `./busybox_shell tail -n 1 test_bnfc_lines.tmp` | Prints last line. |
+| 19 | Touch | `./busybox_shell touch test_bnfc_touch.tmp` | Creates or updates file. |
+| 20 | Make directory | `./busybox_shell mkdir -p test_bnfc_dir/subdir` | Creates nested directory. |
+| 21 | Copy | `./busybox_shell cp test_bnfc_lines.tmp test_bnfc_copy.tmp` | Creates copied file. |
+| 22 | Move | `./busybox_shell mv test_bnfc_copy.tmp test_bnfc_move.tmp` | Renames copied file. |
+| 23 | Dirname | `./busybox_shell dirname a/b/c` | Prints `a/b`. |
+| 24 | Disk usage | `./busybox_shell du test_bnfc_move.tmp` | Prints disk usage and file name. |
+| 25 | Process info | `./busybox_shell procinfo` | Prints process identifiers. |
+| 26 | Threads demo | `./busybox_shell threads` | Starts worker threads and prints results. |
+| 27 | Remove file | `./busybox_shell rm test_bnfc_lines.tmp test_bnfc_move.tmp test_bnfc_touch.tmp` | Removes test files. |
+| 28 | Remove directory | `./busybox_shell rmdir test_bnfc_dir/subdir` | Removes empty subdirectory. |
+| 29 | Remove parent directory | `./busybox_shell rmdir test_bnfc_dir` | Removes empty parent directory. |
+| 30 | Clear | `./busybox_shell clear > /dev/null` | Runs clear command without visible output. |
+| 31 | Interactive simple command | `printf "echo hello\nexit\n" \| ./busybox_shell` | Shell prints `hello`. |
+| 32 | Interactive pipeline | `printf "echo hello \| wc\nexit\n" \| ./busybox_shell` | Shell prints count output from `wc`. |
+| 33 | Interactive semicolon | `printf "pwd ; echo done\nexit\n" \| ./busybox_shell` | Shell prints current directory and `done`. |
+| 34 | Output redirection | `printf "echo hello > test_bnfc_out.tmp\ncat test_bnfc_out.tmp\nrm test_bnfc_out.tmp\nexit\n" \| ./busybox_shell` | File receives `hello`, then `cat` prints it. |
+| 35 | Pipeline with output redirection | `printf "echo hello \| wc > test_bnfc_out.tmp\ncat test_bnfc_out.tmp\nrm test_bnfc_out.tmp\nexit\n" \| ./busybox_shell` | File receives `wc` output, then `cat` prints it. |
+| 36 | Input redirection with pipeline | `printf "cat \| head -n 1 < Makefile\nexit\n" \| ./busybox_shell` | Prints first line of `Makefile`. |
+| 37 | Natural language date | `@ show today's date` | Suggests `localdate`; if accepted, runs through BNFC command path. |
+| 38 | Natural language list | `@ list files` | Suggests `ls`; if accepted, runs through BNFC command path. |
+| 39 | Natural language count | `@ count words in Makefile` | Suggests `wc Makefile`; if accepted, runs through BNFC command path. |
+| 40 | Natural language safety | helper suggests `echo hi ; rm file` | Rejected by safety validation because complex shell operators are not allowed. |
+
+Automated target:
+
+```sh
+make test-bnfc
+```
+
+This target covers the command execution tests and the interactive grammar
+tests. Natural-language tests are interactive by design because the shell asks
+for confirmation before running the suggestion.
+
 ## Presentation Overview
 
 ![Previous parser flow](images/old_parser_flow.svg)
