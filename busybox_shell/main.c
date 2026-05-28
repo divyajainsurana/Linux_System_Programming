@@ -3,12 +3,15 @@
 #include <string.h>
 #include <dirent.h>
 #include <errno.h>
+#include <fcntl.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <termios.h>
 #include <unistd.h>
 #include "cmd_spec.h"
 #include "json_utils.h"
+#include "bnfc/Absyn.h"
+#include "bnfc/Parser.h"
 
 #define MAX_INPUT 1024
 #define MAX_ARGS 64
@@ -44,6 +47,9 @@ struct command_completion_state {
 };
 
 void register_all_builtin_commands(void);
+
+static int execute_pipeline(int command_count, int *argc_list, char ***argv_list);
+static int run_exec_child(int argc, char **argv);
 
 struct json_command_list_state {
     int first;
@@ -884,22 +890,345 @@ static int dispatch_command(int argc, char **argv)
     return cmd->run(argc, argv);
 }
 
-static int argv_contains_pipe(int argc, char **argv)
+static void bnfc_collect_redirections(ListRedirection list,
+                                      const char **input_file,
+                                      const char **output_file)
 {
-    int index;
+    while (list != NULL) {
+        Redirection redir = list->redirection_;
 
-    for (index = 0; index < argc; index++) {
-        if (strcmp(argv[index], "|") == 0) {
+        if (redir != NULL) {
+            switch (redir->kind) {
+            case is_InputRedirection:
+                *input_file = redir->u.inputRedirection_.word_;
+                break;
+            case is_OutputRedirection:
+                *output_file = redir->u.outputRedirection_.word_;
+                break;
+            }
+        }
+
+        list = list->listredirection_;
+    }
+}
+
+static int bnfc_build_argv(CommandPart part, char **argv, int max_args)
+{
+    ListWord words;
+    int argc = 0;
+
+    if (part == NULL || part->kind != is_MkCommandPart || max_args <= 1) {
+        return 0;
+    }
+
+    argv[argc++] = part->u.mkCommandPart_.word_;
+    words = part->u.mkCommandPart_.listword_;
+
+    while (words != NULL && argc < max_args - 1) {
+        argv[argc++] = words->word_;
+        words = words->listword_;
+    }
+
+    argv[argc] = NULL;
+    return argc;
+}
+
+static int bnfc_collect_pipeline(Pipeline pipeline,
+                                 int *argc_list,
+                                 char ***argv_list,
+                                 char *argv_storage[MAX_PIPE_COMMANDS][MAX_ARGS],
+                                 int *command_count)
+{
+    CommandPart part;
+
+    if (pipeline == NULL || *command_count >= MAX_PIPE_COMMANDS) {
+        return 1;
+    }
+
+    switch (pipeline->kind) {
+    case is_SingleCommand:
+        part = pipeline->u.singleCommand_.commandpart_;
+        argv_list[*command_count] = argv_storage[*command_count];
+        argc_list[*command_count] = bnfc_build_argv(part, argv_storage[*command_count], MAX_ARGS);
+        if (argc_list[*command_count] == 0) {
+            fprintf(stderr, "Invalid empty command in pipeline\n");
+            return 1;
+        }
+        (*command_count)++;
+        return 0;
+
+    case is_PipeCommand:
+        part = pipeline->u.pipeCommand_.commandpart_;
+        argv_list[*command_count] = argv_storage[*command_count];
+        argc_list[*command_count] = bnfc_build_argv(part, argv_storage[*command_count], MAX_ARGS);
+        if (argc_list[*command_count] == 0) {
+            fprintf(stderr, "Invalid empty command in pipeline\n");
+            return 1;
+        }
+        (*command_count)++;
+        return bnfc_collect_pipeline(pipeline->u.pipeCommand_.pipeline_,
+                                     argc_list, argv_list, argv_storage, command_count);
+    }
+
+    return 1;
+}
+
+static int bnfc_redirect_fd(const char *path, int target_fd, int flags, mode_t mode)
+{
+    int fd = open(path, flags, mode);
+
+    if (fd < 0) {
+        fprintf(stderr, "%s: %s\n", path, strerror(errno));
+        return 1;
+    }
+
+    if (dup2(fd, target_fd) < 0) {
+        fprintf(stderr, "dup2: %s\n", strerror(errno));
+        close(fd);
+        return 1;
+    }
+
+    close(fd);
+    return 0;
+}
+
+static int bnfc_dispatch_simple_with_redirection(int argc,
+                                                char **argv,
+                                                const char *input_file,
+                                                const char *output_file)
+{
+    int saved_stdin = -1;
+    int saved_stdout = -1;
+    int status;
+
+    if (input_file != NULL) {
+        saved_stdin = dup(STDIN_FILENO);
+        if (saved_stdin < 0 ||
+            bnfc_redirect_fd(input_file, STDIN_FILENO, O_RDONLY, 0) != 0) {
+            if (saved_stdin >= 0) {
+                close(saved_stdin);
+            }
             return 1;
         }
     }
 
-    return 0;
+    if (output_file != NULL) {
+        saved_stdout = dup(STDOUT_FILENO);
+        if (saved_stdout < 0 ||
+            bnfc_redirect_fd(output_file, STDOUT_FILENO,
+                             O_WRONLY | O_CREAT | O_TRUNC, 0644) != 0) {
+            if (saved_stdin >= 0) {
+                dup2(saved_stdin, STDIN_FILENO);
+                close(saved_stdin);
+            }
+            if (saved_stdout >= 0) {
+                close(saved_stdout);
+            }
+            return 1;
+        }
+    }
+
+    status = dispatch_command(argc, argv);
+
+    if (saved_stdout >= 0) {
+        dup2(saved_stdout, STDOUT_FILENO);
+        close(saved_stdout);
+    }
+    if (saved_stdin >= 0) {
+        dup2(saved_stdin, STDIN_FILENO);
+        close(saved_stdin);
+    }
+
+    return status;
 }
 
-static int line_contains_pipe(const char *line)
+static int bnfc_execute_pipeline_with_redirection(int command_count,
+                                                 int *argc_list,
+                                                 char ***argv_list,
+                                                 const char *input_file,
+                                                 const char *output_file)
 {
-    return strchr(line, '|') != NULL;
+    int pipes[MAX_PIPE_COMMANDS - 1][2];
+    pid_t pids[MAX_PIPE_COMMANDS];
+    int created_pipes = 0;
+    int started_children = 0;
+    int command_index;
+    int last_status = 0;
+
+    if (command_count <= 0) {
+        return 0;
+    }
+
+    if (shell_program_path == NULL || shell_program_path[0] == '\0') {
+        shell_program_path = "./busybox_shell";
+    }
+
+    for (command_index = 0; command_index < command_count - 1; command_index++) {
+        if (pipe(pipes[command_index]) < 0) {
+            fprintf(stderr, "pipe: %s\n", strerror(errno));
+            return 1;
+        }
+        created_pipes++;
+    }
+
+    for (command_index = 0; command_index < command_count; command_index++) {
+        pid_t pid = fork();
+
+        if (pid < 0) {
+            fprintf(stderr, "fork: %s\n", strerror(errno));
+            last_status = 1;
+            break;
+        }
+
+        if (pid == 0) {
+            int pipe_index;
+
+            if (command_index == 0 && input_file != NULL &&
+                bnfc_redirect_fd(input_file, STDIN_FILENO, O_RDONLY, 0) != 0) {
+                _exit(1);
+            }
+
+            if (command_index == command_count - 1 && output_file != NULL &&
+                bnfc_redirect_fd(output_file, STDOUT_FILENO,
+                                 O_WRONLY | O_CREAT | O_TRUNC, 0644) != 0) {
+                _exit(1);
+            }
+
+            if (command_index > 0 &&
+                dup2(pipes[command_index - 1][0], STDIN_FILENO) < 0) {
+                fprintf(stderr, "dup2: %s\n", strerror(errno));
+                _exit(1);
+            }
+
+            if (command_index < command_count - 1 &&
+                dup2(pipes[command_index][1], STDOUT_FILENO) < 0) {
+                fprintf(stderr, "dup2: %s\n", strerror(errno));
+                _exit(1);
+            }
+
+            for (pipe_index = 0; pipe_index < created_pipes; pipe_index++) {
+                close(pipes[pipe_index][0]);
+                close(pipes[pipe_index][1]);
+            }
+
+            run_exec_child(argc_list[command_index], argv_list[command_index]);
+        }
+
+        pids[started_children++] = pid;
+    }
+
+    for (command_index = 0; command_index < created_pipes; command_index++) {
+        close(pipes[command_index][0]);
+        close(pipes[command_index][1]);
+    }
+
+    for (command_index = 0; command_index < started_children; command_index++) {
+        int status;
+
+        if (waitpid(pids[command_index], &status, 0) < 0) {
+            fprintf(stderr, "waitpid: %s\n", strerror(errno));
+            last_status = 1;
+            continue;
+        }
+
+        if (command_index == started_children - 1) {
+            if (WIFEXITED(status)) {
+                last_status = WEXITSTATUS(status);
+            } else if (WIFSIGNALED(status)) {
+                last_status = 128 + WTERMSIG(status);
+            } else {
+                last_status = 1;
+            }
+        }
+    }
+
+    return last_status;
+}
+
+static int bnfc_dispatch_command_line(CommandLine commandline)
+{
+    int argc_list[MAX_PIPE_COMMANDS];
+    char **argv_list[MAX_PIPE_COMMANDS];
+    char *argv_storage[MAX_PIPE_COMMANDS][MAX_ARGS];
+    int command_count = 0;
+    Pipeline pipeline;
+    const char *input_file = NULL;
+    const char *output_file = NULL;
+
+    if (commandline == NULL || commandline->kind != is_CommandWithRedir) {
+        return 1;
+    }
+
+    bnfc_collect_redirections(commandline->u.commandWithRedir_.listredirection_,
+                              &input_file, &output_file);
+
+    pipeline = commandline->u.commandWithRedir_.pipeline_;
+    if (bnfc_collect_pipeline(pipeline, argc_list, argv_list, argv_storage, &command_count) != 0) {
+        return 1;
+    }
+
+    if (command_count == 1) {
+        return bnfc_dispatch_simple_with_redirection(argc_list[0], argv_list[0],
+                                                    input_file, output_file);
+    }
+
+    if (input_file != NULL || output_file != NULL) {
+        return bnfc_execute_pipeline_with_redirection(command_count, argc_list,
+                                                     argv_list, input_file, output_file);
+    }
+
+    return execute_pipeline(command_count, argc_list, argv_list);
+}
+
+static int bnfc_dispatch_job(Job job)
+{
+    CommandLine commandline;
+
+    if (job == NULL) {
+        return 0;
+    }
+
+    switch (job->kind) {
+    case is_ForegroundJob:
+        return bnfc_dispatch_command_line(job->u.foregroundJob_.commandline_);
+
+    case is_BackgroundJob:
+        commandline = job->u.backgroundJob_.commandline_;
+        fprintf(stderr, "Background jobs parsed, but BNFC execution does not handle them yet\n");
+        (void) commandline;
+        return 1;
+    }
+
+    return 1;
+}
+
+static int dispatch_bnfc_line(const char *line)
+{
+    Input input;
+    ListJob jobs;
+    int status = 0;
+
+    input = psInput(line);
+    if (input == NULL || input->kind != is_StartInput) {
+        return 2;
+    }
+
+    jobs = input->u.startInput_.listjob_;
+    while (jobs != NULL) {
+        status = bnfc_dispatch_job(jobs->job_);
+        if (status < 0) {
+            break;
+        }
+        jobs = jobs->listjob_;
+    }
+
+    free_Input(input);
+    return status;
+}
+
+static int line_contains_shell_syntax(const char *line)
+{
+    return strpbrk(line, "|<>&;") != NULL;
 }
 
 static int run_exec_child(int argc, char **argv)
@@ -1004,79 +1333,6 @@ static int execute_pipeline(int command_count, int *argc_list, char ***argv_list
     }
 
     return last_status;
-}
-
-static int dispatch_pipeline_from_argv(int argc, char **argv)
-{
-    char **argv_list[MAX_PIPE_COMMANDS];
-    int argc_list[MAX_PIPE_COMMANDS];
-    int command_count = 0;
-    int index = 0;
-
-    while (index < argc) {
-        if (command_count >= MAX_PIPE_COMMANDS) {
-            fprintf(stderr, "Too many pipeline commands; maximum is %d\n", MAX_PIPE_COMMANDS);
-            return 1;
-        }
-
-        argv_list[command_count] = &argv[index];
-        argc_list[command_count] = 0;
-
-        while (index < argc && strcmp(argv[index], "|") != 0) {
-            argc_list[command_count]++;
-            index++;
-        }
-
-        if (argc_list[command_count] == 0) {
-            fprintf(stderr, "Invalid empty command in pipeline\n");
-            return 1;
-        }
-
-        if (index < argc) {
-            argv[index] = NULL;
-            index++;
-        }
-
-        command_count++;
-    }
-
-    return execute_pipeline(command_count, argc_list, argv_list);
-}
-
-static int dispatch_pipeline_line(const char *line)
-{
-    char copy[MAX_INPUT];
-    char *segments[MAX_PIPE_COMMANDS];
-    char *argv_storage[MAX_PIPE_COMMANDS][MAX_ARGS];
-    char **argv_list[MAX_PIPE_COMMANDS];
-    int argc_list[MAX_PIPE_COMMANDS];
-    int command_count = 0;
-    char *segment;
-
-    snprintf(copy, sizeof(copy), "%s", line);
-    segment = strtok(copy, "|");
-
-    while (segment != NULL) {
-        if (command_count >= MAX_PIPE_COMMANDS) {
-            fprintf(stderr, "Too many pipeline commands; maximum is %d\n", MAX_PIPE_COMMANDS);
-            return 1;
-        }
-
-        segments[command_count] = segment;
-        command_count++;
-        segment = strtok(NULL, "|");
-    }
-
-    for (int index = 0; index < command_count; index++) {
-        argc_list[index] = split_line(segments[index], argv_storage[index], MAX_ARGS);
-        if (argc_list[index] == 0) {
-            fprintf(stderr, "Invalid empty command in pipeline\n");
-            return 1;
-        }
-        argv_list[index] = argv_storage[index];
-    }
-
-    return execute_pipeline(command_count, argc_list, argv_list);
 }
 
 static void lowercase_copy(char *out, size_t out_size, const char *in)
@@ -1627,17 +1883,40 @@ static int command_is_safe_to_dispatch(char *command)
 
 static int dispatch_command_line(const char *command)
 {
-    char copy[MAX_INPUT];
-    char *argv[MAX_ARGS];
-    int argc;
+    int status;
 
-    if (line_contains_pipe(command)) {
-        return dispatch_pipeline_line(command);
+    status = dispatch_bnfc_line(command);
+    if (status == 2 && line_contains_shell_syntax(command)) {
+        return 1;
+    }
+    return status;
+}
+
+static int dispatch_argv_line_with_bnfc(int argc, char **argv)
+{
+    char line[MAX_INPUT];
+    size_t used = 0;
+    int index;
+    int status;
+
+    line[0] = '\0';
+    for (index = 0; index < argc; index++) {
+        int written;
+
+        written = snprintf(line + used, sizeof(line) - used,
+                           "%s%s", index == 0 ? "" : " ", argv[index]);
+        if (written < 0 || (size_t) written >= sizeof(line) - used) {
+            fprintf(stderr, "Command line too long\n");
+            return 1;
+        }
+        used += (size_t) written;
     }
 
-    snprintf(copy, sizeof(copy), "%s", command);
-    argc = split_line(copy, argv, MAX_ARGS);
-    return dispatch_command(argc, argv);
+    status = dispatch_bnfc_line(line);
+    if (status == 2 && line_contains_shell_syntax(line)) {
+        return 1;
+    }
+    return status;
 }
 
 static int ask_yes_no(const char *prompt)
@@ -1820,8 +2099,6 @@ static int handle_natural_language_request(const char *line, int interactive_ter
 static int run_interactive_shell(void)
 {
     char line[MAX_INPUT];
-    char *argv[MAX_ARGS];
-    int argc;
     int status = 0;
     int interactive_terminal = isatty(STDIN_FILENO);
 
@@ -1856,11 +2133,9 @@ static int run_interactive_shell(void)
             continue;
         }
 
-        if (line_contains_pipe(line)) {
-            status = dispatch_pipeline_line(line);
-        } else {
-            argc = split_line(line, argv, MAX_ARGS);
-            status = dispatch_command(argc, argv);
+        status = dispatch_bnfc_line(line);
+        if (status == 2 && line_contains_shell_syntax(line)) {
+            status = 1;
         }
 
         if (status < 0) {
@@ -1884,10 +2159,6 @@ int main(int argc, char **argv)
         return run_interactive_shell();
     }
 
-    if (argv_contains_pipe(argc - 1, argv + 1)) {
-        status = dispatch_pipeline_from_argv(argc - 1, argv + 1);
-    } else {
-        status = dispatch_command(argc - 1, argv + 1);
-    }
+    status = dispatch_argv_line_with_bnfc(argc - 1, argv + 1);
     return status < 0 ? 0 : status;
 }

@@ -1,0 +1,31 @@
+-- BusyBox shell command-line grammar for BNFC's C backend.
+-- Step 1 grammar: simple commands, pipelines, redirection, background jobs,
+-- and semicolon-separated jobs. Execution still lives in busybox_shell/main.c.
+
+comment "/*" "*/" ;
+comment "//" "\n" ;
+
+token Word ((letter | digit | '_' | '.' | '/' | '-')+) ;
+
+entrypoints Input ;
+
+StartInput. Input ::= [Job] ;
+
+ForegroundJob. Job ::= CommandLine ;
+BackgroundJob. Job ::= CommandLine "&" ;
+
+separator nonempty Job ";" ;
+
+CommandWithRedir. CommandLine ::= Pipeline [Redirection] ;
+
+SingleCommand. Pipeline ::= CommandPart ;
+PipeCommand. Pipeline ::= CommandPart "|" Pipeline ;
+
+MkCommandPart. CommandPart ::= Word [Word] ;
+
+separator Word " " ;
+
+InputRedirection. Redirection ::= "<" Word ;
+OutputRedirection. Redirection ::= ">" Word ;
+
+terminator Redirection "" ;

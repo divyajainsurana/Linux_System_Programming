@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1040" height="300" viewBox="0 0 1040 300" role="img" aria-labelledby="title desc">
+  <title id="title">BNFC parser flow</title>
+  <desc id="desc">Command text is parsed by BNFC into an AST, adapted into execution data, then run by the existing command backend.</desc>
+  <defs>
+    <marker id="arrow" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto" markerUnits="strokeWidth">
+      <path d="M0,0 L0,6 L9,3 z" fill="#263548"/>
+    </marker>
+    <style>
+      .box { fill: #f8fafc; stroke: #42526e; stroke-width: 2; rx: 8; }
+      .parser { fill: #eff6ff; stroke: #2563eb; stroke-width: 2; rx: 8; }
+      .adapter { fill: #ecfdf5; stroke: #047857; stroke-width: 2; rx: 8; }
+      .exec { fill: #fefce8; stroke: #a16207; stroke-width: 2; rx: 8; }
+      .text { font: 18px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #172033; }
+      .small { font: 14px ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; fill: #46556a; }
+      .arrow { stroke: #263548; stroke-width: 2.5; marker-end: url(#arrow); }
+    </style>
+  </defs>
+  <rect x="28" y="82" width="150" height="82" class="box"/>
+  <text x="103" y="116" text-anchor="middle" class="text">text line</text>
+  <text x="103" y="141" text-anchor="middle" class="small">echo hello | wc</text>
+
+  <line x1="184" y1="123" x2="252" y2="123" class="arrow"/>
+
+  <rect x="262" y="82" width="160" height="82" class="parser"/>
+  <text x="342" y="108" text-anchor="middle" class="text">BNFC parser</text>
+  <text x="342" y="133" text-anchor="middle" class="small">Grammar.cf</text>
+  <text x="342" y="153" text-anchor="middle" class="small">Parser/Lexer</text>
+
+  <line x1="428" y1="123" x2="496" y2="123" class="arrow"/>
+
+  <rect x="506" y="82" width="120" height="82" class="parser"/>
+  <text x="566" y="116" text-anchor="middle" class="text">AST</text>
+  <text x="566" y="141" text-anchor="middle" class="small">Absyn.h</text>
+
+  <line x1="632" y1="123" x2="700" y2="123" class="arrow"/>
+
+  <rect x="710" y="82" width="150" height="82" class="adapter"/>
+  <text x="785" y="108" text-anchor="middle" class="text">adapter</text>
+  <text x="785" y="133" text-anchor="middle" class="small">argc/argv</text>
+  <text x="785" y="153" text-anchor="middle" class="small">pipeline/redir</text>
+
+  <line x1="866" y1="123" x2="934" y2="123" class="arrow"/>
+
+  <rect x="944" y="82" width="70" height="82" class="exec"/>
+  <text x="979" y="116" text-anchor="middle" class="text">run</text>
+  <text x="979" y="141" text-anchor="middle" class="small">cmds</text>
+
+  <text x="520" y="222" text-anchor="middle" class="small">The command modules stay the same. Only the parsing frontend changes.</text>
+</svg>

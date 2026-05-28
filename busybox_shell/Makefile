@@ -2,6 +2,11 @@ CC = gcc
 CFLAGS = -Wall -Wextra -std=c11 -pthread
 
 TARGET = busybox_shell
+BNFC_DIR = bnfc
+BNFC_SRC = $(BNFC_DIR)/Absyn.c \
+           $(BNFC_DIR)/Buffer.c \
+           $(BNFC_DIR)/Lexer.c \
+           $(BNFC_DIR)/Parser.c
 
 SRC = main.c \
       cmd_localdate.c \
@@ -30,16 +35,21 @@ SRC = main.c \
       registry.c \
       register_all_commands.c \
       json_utils.c \
+      $(BNFC_SRC) \
       $(wildcard argtable3/src/*.c)
 
 all: $(TARGET)
 
-$(TARGET): $(SRC)
+bnfc_parser:
+	$(MAKE) -C $(BNFC_DIR) build
+
+$(TARGET): bnfc_parser $(SRC)
 	$(CC) $(CFLAGS) -o $(TARGET) $(SRC)
 
 clean:
 	rm -f $(TARGET) myshell localdate
 	find . -name '*.o' -delete
+	$(MAKE) -C $(BNFC_DIR) clean
 
 run: all
 	./$(TARGET)
@@ -77,3 +87,32 @@ test: all
 	./$(TARGET) clear > /dev/null
 	rm -f test_touch.tmp
 	printf "localdate\npkg\npwd\nwc Makefile\necho hello shell\nwhoami\nid\nuname\nhelp mkdir\nexit\n" | ./$(TARGET)
+
+test-bnfc: all
+	./$(TARGET) localdate
+	./$(TARGET) pkg
+	./$(TARGET) pwd
+	./$(TARGET) echo hello grammar | grep "^hello grammar$$"
+	test "$$(./$(TARGET) echo -n hello)" = "hello"
+	./$(TARGET) ls Makefile | grep "^Makefile$$"
+	./$(TARGET) cat Makefile | grep "^CC = gcc"
+	./$(TARGET) wc Makefile
+	./$(TARGET) whoami | grep "$$(whoami)"
+	./$(TARGET) id | grep "uid="
+	./$(TARGET) uname | grep "$$(uname -s)"
+	printf "one\ntwo\nthree\n" > test_bnfc_lines.tmp
+	./$(TARGET) head -n 1 test_bnfc_lines.tmp | grep "^one$$"
+	./$(TARGET) tail -n 1 test_bnfc_lines.tmp | grep "^three$$"
+	./$(TARGET) touch test_bnfc_touch.tmp
+	./$(TARGET) mkdir -p test_bnfc_dir/subdir
+	./$(TARGET) cp test_bnfc_lines.tmp test_bnfc_copy.tmp
+	./$(TARGET) mv test_bnfc_copy.tmp test_bnfc_move.tmp
+	./$(TARGET) dirname a/b/c | grep "^a/b$$"
+	./$(TARGET) du test_bnfc_move.tmp | grep "test_bnfc_move.tmp"
+	./$(TARGET) procinfo
+	./$(TARGET) threads
+	./$(TARGET) rm test_bnfc_lines.tmp test_bnfc_move.tmp test_bnfc_touch.tmp
+	./$(TARGET) rmdir test_bnfc_dir/subdir
+	./$(TARGET) rmdir test_bnfc_dir
+	./$(TARGET) clear > /dev/null
+	printf "echo hello | wc\npwd ; echo done\necho hello > test_bnfc_out.tmp\ncat test_bnfc_out.tmp\nrm test_bnfc_out.tmp\nexit\n" | ./$(TARGET)
