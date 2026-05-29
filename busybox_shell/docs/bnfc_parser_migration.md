@@ -3,17 +3,21 @@
 This document explains the difference between the previous command parsing
 approach and the current BNFC grammar-based approach.
 
-## Summary
+## Project Overview
 
-The shell still uses the same command implementations:
+This project migrates the BusyBox-style shell from manual string splitting to a
+BNFC grammar-based parser. The shell still uses the existing command modules for
+execution, but command-line syntax is now parsed into a structured AST before
+execution.
 
-- `cmd_echo.c`
-- `cmd_ls.c`
-- `cmd_cat.c`
-- `cmd_wc.c`
-- and the other `cmd_*.c` modules
+The main change is the parsing frontend:
 
-The change is in how command lines are parsed before execution.
+| Previous parser | Current parser |
+|---|---|
+| Split text with `strtok` / `split_line`. | Parse text with a BNFC-generated lexer/parser. |
+| Produced only `argc` / `argv`. | Produces an AST with jobs, pipelines, redirections, variables, subcommands, and conditionals. |
+| Each new shell feature needed more manual string handling. | New syntax is added as grammar rules in `Grammar.cf`. |
+| Pipes, semicolons, and redirection required separate ad hoc parsing. | Pipes, semicolons, redirection, variables, backticks, and `if/then/fi` are represented explicitly. |
 
 Previous flow:
 
@@ -24,327 +28,171 @@ text line -> strtok/split_line -> argc/argv -> dispatch_command
 Current flow:
 
 ```text
-text line -> BNFC parser -> AST -> argc/argv or pipeline -> dispatch_command/execute_pipeline
+text line -> BNFC parser -> AST -> adapter -> argc/argv or pipeline -> command execution
 ```
 
-The command registry is still the execution backend. BNFC is now the parsing
-frontend.
+The command registry remains the execution backend. BNFC is responsible for
+syntax; the existing `cmd_*.c` files still implement command behavior.
 
-## Week 08 Work Completed
+## Week 08 Deliverables
 
-This is the high-level summary of what was completed by Week 08.
-
-| Area | What was done | Main files | How to present it |
-|---|---|---|---|
-| BNFC grammar | Added a formal grammar for shell command lines. | `busybox_shell/bnfc/Grammar.cf` | Show how simple commands, pipelines, semicolons, redirection, and background syntax are represented as grammar rules. |
-| Parser generation | Added a BNFC build path so lexer/parser/AST files are generated automatically. | `busybox_shell/bnfc/Makefile`, `busybox_shell/Makefile` | Explain that generated files such as `Parser.c`, `Lexer.c`, and `Absyn.c` come from `Grammar.cf`. |
-| Shell integration | Connected the generated parser to the existing shell execution path. | `busybox_shell/main.c` | Show that input now goes through BNFC before reaching `dispatch_command()` or pipeline execution. |
-| Existing commands | Kept the existing command implementations as the backend. | `cmd_*.c`, `registry.c` | Emphasize that `ls`, `cat`, `wc`, `echo`, `mkdir`, `rm`, and others were not rewritten for parsing. |
-| Pipeline support | Commands can be parsed as structured pipelines. | `Grammar.cf`, `main.c` | Demo `echo hello | wc` in interactive mode or `./busybox_shell echo hello "\|" wc` in direct mode. |
-| Semicolon jobs | Multiple commands can be parsed and executed in order. | `Grammar.cf`, `main.c` | Demo `pwd ; echo done`. |
-| Redirection | Top-level input and output redirection are represented in the AST. | `Grammar.cf`, `main.c` | Demo `echo hello > out.txt`, then `cat out.txt`. |
-| Natural-language interface | The `@` interface feeds accepted suggestions into the grammar-backed command path. | `main.c`, `ollama_llm_helper.sh` | Demo `@list files` or `@count words in Makefile`, then explain it still goes through validation and BNFC. |
-| Variables | Added shell variables using assignment and expansion syntax. | `Grammar.cf`, `main.c` | Demo `x=5`, then `echo $x`. |
-| Backtick subcommands | Added simple command substitution as an argument form. | `Grammar.cf`, `main.c` | Demo ``echo `echo hi` `` or `x=` followed by a backtick subcommand. |
-| Simple `if/then/fi` | Added conditional execution for a command status and then-body. | `Grammar.cf`, `main.c` | Demo `if echo cond then echo yes fi`. |
-| Regression tests | The shell has a 153-case regression suite documented in this file. | `busybox_shell/test.sh` | Run `./test.sh` and show `Total test cases: 153` / `All tests passed!`. |
-| Bugs fixed | Fixed grammar and echo behavior found through testing. | `Grammar.cf`, `cmd_echo.c` | Explain the `echo -e 'a\nb'` bug and why adding backslash to `Word` mattered. |
-| Presentation documentation | Added diagrams, comparison tables, bug notes, and full test documentation. | `docs/bnfc_parser_migration.md`, `docs/images/*.svg` | Use this document itself as the class presentation guide. |
-
-## Lab Prompt And Assignment Alignment
-
-The notebook section `Sample Prompts (BNFC)` suggests using AI or written
-analysis for these BNFC tasks:
-
-| Notebook prompt | Status in this project | How to present it |
+| Feature | What changed | Direct example |
 |---|---|---|
-| List tokens, nonterminals, and list categories from `Grammar.cf`. | Covered by the grammar feature table in this document. | Point to `Word`, `Input`, `Job`, `Assignment`, `IfStatement`, `CommandLine`, `Pipeline`, `CommandPart`, `Arg`, `Redirection`, `[Job]`, `[Arg]`, and `[Word]`. |
-| Add variable assignment and `$` expansion. | Implemented. | Demo `x=5`, then `echo $x`. |
-| Regenerate with BNFC C backend and list make steps. | Implemented. | Show `make` or `make test-bnfc`; explain that BNFC generates `Absyn`, `Parser`, `Lexer`, `Printer`, and `Test` files. |
-| Explain shift/reduce conflicts and minimal fixes. | Current grammar builds without Bison shift/reduce conflicts after narrowing backtick subcommands to `Word [Word]`. | Explain that the first full-`CommandLine` backtick attempt was ambiguous, so the minimal fix was a smaller subcommand grammar. |
-| Provide three inputs to test pipelines, redirection, and background syntax. | Pipeline and redirection execution are tested; background syntax is parsed but execution is not implemented. | Demo `echo hello | wc`, `echo hello > out.txt`, and explain `sleep 5 &` as parsed-but-not-executed syntax. |
+| Formal shell grammar | `Grammar.cf` now defines shell syntax instead of relying on only `strtok` token splitting. | `CommandPart "|" Pipeline` represents `echo hello | wc`. |
+| Parser generation | The build regenerates BNFC lexer, parser, AST, and printer files. | `make` builds `Absyn.c`, `Lexer.c`, `Parser.c`, `Printer.c`, and `TestInput`. |
+| Shell integration | `main.c` parses input with BNFC before dispatching commands. | `dispatch_bnfc_line("echo hello")` parses first, then runs `dispatch_command()`. |
+| Existing command backend | Existing `cmd_*.c` files still execute command behavior. | `cmd_echo.c` still prints text; `cmd_ls.c` still lists files. |
+| Pipelines | Pipelines are AST nodes, not manually split strings. | `busybox_shell> echo hello | wc` |
+| Semicolon jobs | Multiple jobs can be parsed and executed in order. | `busybox_shell> pwd ; echo done` |
+| Redirection | Top-level input/output redirection is represented in the AST. | `busybox_shell> echo hello > out.txt` |
+| Variables | Assignment and `$` expansion are supported. | `x=5`, then `echo $x` prints `5`. |
+| Backtick subcommands | Simple command substitution is supported as an argument. | ``echo `echo hi` `` prints `hi`. |
+| Simple `if/then/fi` | A condition command controls whether the then-body runs. | `if echo cond then echo yes fi` prints `cond` and `yes`. |
+| Natural-language interface | Accepted `@` suggestions use the same grammar-backed command path. | `@list files` suggests `ls`; accepted `ls` is parsed by BNFC. |
+| Regression tests | The test suite covers the shell and grammar features. | `./test.sh` ends with `Total test cases: 153` and `All tests passed!`. |
 
-The notebook section `Assignment (1 week)` asks for:
+## Lab Assignment Coverage
 
-| Assignment item | Current status | Notes |
+The lab notebook asks for BNFC grammar work, parser regeneration,
+AST-to-execution mapping, and new shell syntax. The current implementation
+covers those items as follows.
+
+| Lab requirement | Status | Direct example |
 |---|---|---|
-| Extend `Grammar.cf` for variables: `x=5`, `$x`. | Completed. | `AssignmentJob`, `SetVariable`, and `VariableArg` are generated by BNFC and executed in `main.c`. |
-| Extend grammar for subcommands using backticks. | Completed for simple command substitution. | Backticks support `Word [Word]`, for example `` `echo hi` `` and `` `pwd` ``. Full pipelines inside backticks are not implemented. |
-| Extend grammar for simple `if/then/fi`. | Completed. | `IfThenFi` runs the then-body only when the condition command returns status 0. |
-| Regenerate/build with BNFC and show ASTs for new features. | Completed. | `TestInput` prints ASTs containing `AssignmentJob`, `VariableArg`, `SubcommandArg`, and `IfJob`. |
-| Map AST to execution using prior shell helpers. | Completed for current command, pipeline, semicolon, redirection, variable, backtick, and simple-if features. | The adapter in `main.c` converts BNFC ASTs to existing execution helpers and new variable/subcommand handling. |
-| Keep an AI interaction log with 5-10 prompts and accepted diffs. | This document partially serves that role for design decisions and bug fixes. | If required, create a separate concise log listing prompts, accepted changes, and rejected/modified suggestions. |
+| List tokens, nonterminals, and list categories. | Completed | `Word`, `Input`, `Job`, `Assignment`, `IfStatement`, `CommandLine`, `Pipeline`, `CommandPart`, `Arg`, `Redirection`, `[Job]`, `[Arg]`, `[Word]`. |
+| Add variable assignment and `$` expansion. | Completed | `x=5 ; echo $x` prints `5`. |
+| Add subcommands using backticks. | Completed for simple commands | ``echo `pwd` `` prints the current directory; ``echo `echo hi` `` prints `hi`. |
+| Add simple `if/then/fi`. | Completed | `if echo cond then echo yes fi` prints `cond` and `yes`. |
+| Regenerate/build with BNFC. | Completed | `make -C bnfc build` regenerates parser files from `Grammar.cf`. |
+| Show ASTs for new features. | Completed | `printf 'x=5 ; echo $x\n' | bnfc/TestInput` shows `AssignmentJob` and `VariableArg`. |
+| Map AST to execution using prior shell helpers. | Completed | `echo hello | wc` becomes a pipeline AST and runs through the existing pipeline executor. |
+| Keep AI interaction notes and accepted changes. | Partially covered | The bug section records accepted fixes such as the `echo -e 'a\nb'` grammar and spacing fix. |
 
-Presentation wording:
+## Core Message
 
-```text
-By Week 08, I completed the grammar migration for the core shell syntax and
-then extended it with the notebook assignment features: variables, simple
-backtick command substitution, and simple if/then/fi. Full shell behavior such
-as quoted strings, append redirection, and pipelines inside backticks remains
-future work.
-```
-
-## Presentation Roadmap
-
-This section is written as a realistic presentation script. You can present from
-this document directly and use the later sections as supporting detail.
-
-### 1. Start With The Problem
-
-Opening point:
+By Week 08, the shell moved from token-based parsing to grammar-based parsing.
+The result is a clearer separation of responsibilities:
 
 ```text
-Originally, my shell parsed commands by splitting the input string into tokens.
-That works for simple commands like echo hello, but it becomes harder to manage
-when the shell needs pipelines, semicolons, redirection, and safer validation.
+Grammar.cf defines syntax.
+BNFC generates lexer/parser/AST code.
+main.c adapts the AST into execution.
+cmd_*.c files still implement command behavior.
 ```
 
-Show this old flow:
+The migration makes shell syntax explicit and testable. Pipelines, redirection,
+variables, backtick subcommands, and simple conditionals now have grammar-level
+representations instead of being scattered across manual string checks.
 
-```text
-text line -> strtok/split_line -> argc/argv -> dispatch_command
-```
+## Feature Demonstration
 
-Example to say out loud:
-
-```sh
-echo hello world
-```
-
-Old meaning:
-
-```text
-argv[0] = echo
-argv[1] = hello
-argv[2] = world
-```
-
-Transition:
-
-```text
-The issue is that this gives us tokens, but not structure. A pipe, a
-redirection, and a normal word are all just characters until we manually check
-for them.
-```
-
-### 2. Introduce The New Idea
-
-Main point:
-
-```text
-I moved parsing into a BNFC grammar. Instead of manually splitting every command
-line, the shell now has a formal syntax in Grammar.cf.
-```
-
-Point to:
-
-```text
-busybox_shell/bnfc/Grammar.cf
-```
-
-Show this current flow:
-
-```text
-text line -> BNFC parser -> AST -> argc/argv or pipeline -> command execution
-```
-
-Transition:
-
-```text
-The important thing is that BNFC does not run commands. It only tells the shell
-what the command line means structurally.
-```
-
-### 3. Show The Grammar Features
-
-Use the grammar diagram:
-
-```text
-docs/images/bnfc_grammar_features.svg
-```
-
-Explain these supported grammar features:
-
-```text
-simple commands: echo hello
-pipelines: echo hello | wc
-semicolon jobs: pwd ; echo done
-output redirection: echo hello > out.txt
-input redirection: cat | head -n 1 < Makefile
-variables: x=5 ; echo $x
-backtick subcommands: echo `echo hi`
-simple conditionals: if echo cond then echo yes fi
-background syntax: sleep 5 &
-```
-
-Important note:
-
-```text
-Background jobs are parsed by the grammar, but execution is not implemented yet.
-That shows a benefit of grammar-based design: syntax support and execution
-support can be developed separately.
-```
-
-### 4. Explain How Existing Commands Still Work
-
-Main point:
-
-```text
-I did not rewrite every command. Commands such as ls, cat, wc, echo, mkdir, rm,
-and others still use the existing cmd_*.c implementations.
-```
-
-What changed:
-
-```text
-Before execution, main.c now asks BNFC to parse the command line. Then adapter
-code converts the AST back into argc/argv or pipeline data.
-```
-
-Point to:
-
-```text
-busybox_shell/main.c
-dispatch_bnfc_line()
-bnfc_dispatch_job()
-bnfc_collect_pipeline()
-bnfc_build_argv()
-```
-
-Transition:
-
-```text
-So the backend stayed familiar, but the frontend became structured.
-```
-
-### 5. Demo The Shell
-
-Run these from `busybox_shell`:
+Simple command:
 
 ```sh
 ./busybox_shell echo hello grammar
-./busybox_shell ls Makefile
+```
+
+Pipeline in direct mode, where the host terminal requires the pipe to be quoted:
+
+```sh
 ./busybox_shell echo hello "|" wc
 ```
 
-Then show interactive syntax:
-
-```sh
-./busybox_shell
-```
-
-Inside the shell:
+Pipeline in interactive mode, where the BusyBox shell receives the full input
+line directly:
 
 ```text
-echo hello | wc
-pwd ; echo done
-echo hello > out.txt
-cat out.txt
-rm out.txt
-x=5
-echo $x
-echo `echo hi`
-if echo cond then echo yes fi
-exit
+busybox_shell> echo hello | wc
 ```
 
-Demo explanation:
+Semicolon-separated jobs:
 
 ```text
-In direct mode I quote the pipe as "|" because my macOS/Linux terminal would
-otherwise consume the pipe before busybox_shell sees it. In interactive mode,
-the shell receives the whole line directly, so I can type echo hello | wc.
+busybox_shell> pwd ; echo done
 ```
 
-### 6. Show The Natural-Language Interface
-
-Main point:
+Output redirection:
 
 ```text
-The @ interface suggests a normal shell command from a natural-language request.
-After confirmation, that suggested command also goes through the BNFC parser.
+busybox_shell> echo hello > out.txt
+busybox_shell> cat out.txt
+busybox_shell> rm out.txt
 ```
 
-Demo:
+Variables:
 
 ```text
-@list files
-@where am I
-@count words in Makefile
+busybox_shell> x=5
+busybox_shell> echo $x
+5
 ```
 
-Safety point:
+Backtick subcommand substitution:
 
 ```text
-The natural-language helper does not bypass parsing or safety checks. It is just
-another way to produce a command string, and that string still goes through the
-same grammar-backed path.
+busybox_shell> echo `echo hi`
+hi
 ```
 
-### 7. Show Testing
-
-Main point:
+Simple conditional execution:
 
 ```text
-To prove the migration did not break the shell, I kept the full regression
-suite and documented every test case in this file.
+busybox_shell> if echo cond then echo yes fi
+cond
+yes
 ```
 
-Run:
+Natural-language command suggestion:
+
+```text
+busybox_shell> @list files
+AI suggestion: ls
+Run it? [y/N]
+```
+
+The natural-language interface does not bypass the parser. Once a suggestion is
+accepted, it is validated and sent through the same BNFC-backed command path.
+
+## Verification Snapshot
+
+The full regression suite validates the migration and the added grammar
+features.
 
 ```sh
 cd busybox_shell
 ./test.sh
 ```
 
-Expected ending:
+Expected result:
 
 ```text
 Total test cases: 153
 All tests passed!
 ```
 
-Mention:
+## Implementation Architecture
 
-```text
-The table later in this document mirrors test.sh, including version checks,
-natural-language suggestions, command behavior, JSON output, pipelines,
-process/thread support, file commands, interactive shell behavior, and invalid
-command handling.
-```
+The BusyBox shell now has a grammar-backed frontend and the same modular command
+backend.
 
-### 8. Explain Bugs Found During Migration
+The grammar frontend provides:
 
-Use the `echo -e` example:
+- simple command parsing
+- pipeline parsing
+- semicolon-separated job parsing
+- input/output redirection parsing
+- variable assignment and `$` expansion
+- simple backtick command substitution
+- simple `if/then/fi` conditionals
+- parsed background-job syntax
 
-```sh
-./busybox_shell echo -e 'a\nb' | grep -q '^b$'
-```
+The command backend still provides:
 
-Explain:
-
-```text
-This failed because the first grammar did not allow backslash inside a Word
-token. After adding backslash support to Grammar.cf, the parser accepted a\nb.
-Then I fixed a small echo spacing issue after options like -e and -n.
-```
-
-Closing point:
-
-```text
-This is exactly why the grammar migration was useful: it made parsing behavior
-explicit, testable, and easier to reason about than scattered string splitting.
-```
-
-## What We Have Implemented So Far
-
-So far, the BusyBox shell has been updated in three main ways:
-
-1. A BNFC grammar frontend was added.
-2. The shell core now uses that grammar frontend before executing commands.
-3. The existing natural-language `@` interface now feeds accepted suggestions
-   into the same grammar-backed execution path.
+- command lookup through the registry
+- command execution through `cmd->run(argc, argv)`
+- existing implementations in `cmd_*.c`
+- process-backed pipeline execution
+- command-specific options, help, JSON output, and version output
 
 The new parser lives in:
 
@@ -370,7 +218,7 @@ In simple terms, the shell now does this:
 user input
   -> parse with BNFC
   -> build AST
-  -> convert AST to argv/pipeline/redirection
+  -> convert AST to argv/pipeline/redirection/variables/conditionals
   -> run existing command modules
 ```
 
