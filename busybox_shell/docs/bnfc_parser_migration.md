@@ -28,7 +28,13 @@ text line -> strtok/split_line -> argc/argv -> dispatch_command
 Current flow:
 
 ```text
-text line -> BNFC parser -> AST -> adapter -> argc/argv or pipeline -> command execution
+text line
+  -> BNFC parser
+  -> AST
+  -> adapter
+  -> argc/argv or pipeline arrays
+  -> dispatch_command() for one command
+  -> pipe() + fork() + dup2() + execvp() for pipelines
 ```
 
 The command registry remains the execution backend. BNFC is responsible for
@@ -38,11 +44,11 @@ syntax; the existing `cmd_*.c` files still implement command behavior.
 
 | Feature | What changed | Direct example |
 |---|---|---|
-| Formal shell grammar | `Grammar.cf` now defines shell syntax instead of relying on only `strtok` token splitting. | `CommandPart "|" Pipeline` represents `echo hello | wc`. |
+| Formal shell grammar | `Grammar.cf` now defines shell syntax instead of relying on only `strtok` token splitting. | `CommandPart "\|" Pipeline` represents `echo hello \| wc`. |
 | Parser generation | The build regenerates BNFC lexer, parser, AST, and printer files. | `make` builds `Absyn.c`, `Lexer.c`, `Parser.c`, `Printer.c`, and `TestInput`. |
 | Shell integration | `main.c` parses input with BNFC before dispatching commands. | `dispatch_bnfc_line("echo hello")` parses first, then runs `dispatch_command()`. |
 | Existing command backend | Existing `cmd_*.c` files still execute command behavior. | `cmd_echo.c` still prints text; `cmd_ls.c` still lists files. |
-| Pipelines | Pipelines are AST nodes, not manually split strings. | `busybox_shell> echo hello | wc` |
+| Pipelines | Pipelines are AST nodes, not manually split strings. | Interactive: `busybox_shell> echo hello \| wc`<br>Direct terminal mode: `./busybox_shell echo hello "\|" wc` |
 | Semicolon jobs | Multiple jobs can be parsed and executed in order. | `busybox_shell> pwd ; echo done` |
 | Redirection | Top-level input/output redirection is represented in the AST. | `busybox_shell> echo hello > out.txt` |
 | Variables | Assignment and `$` expansion are supported. | `x=5`, then `echo $x` prints `5`. |
@@ -511,6 +517,30 @@ Then the existing pipeline executor runs:
 ```c
 execute_pipeline(command_count, argc_list, argv_list);
 ```
+
+The pipeline executor uses normal Unix process primitives:
+
+```text
+echo hello | wc
+
+BNFC parser
+  -> pipeline AST
+  -> command arrays
+  -> pipe()
+  -> fork() child 1
+       -> dup2(pipe_write, STDOUT_FILENO)
+       -> execvp("./busybox_shell", ["./busybox_shell", "echo", "hello"])
+  -> fork() child 2
+       -> dup2(pipe_read, STDIN_FILENO)
+       -> execvp("./busybox_shell", ["./busybox_shell", "wc"])
+  -> parent closes pipe fds and waits with waitpid()
+```
+
+So BNFC decides the structure of the command line, while `fork()` and
+`execvp()` are still responsible for process execution. In this implementation,
+each pipeline segment re-runs `./busybox_shell` with that segment's arguments,
+so existing built-in commands such as `echo`, `wc`, `head`, and `ls` can be used
+inside pipelines.
 
 For redirection:
 
