@@ -246,6 +246,18 @@ run_test "echo -E keeps escapes literal" "./busybox_shell echo -E 'a\\nb' | grep
 run_test "echo help prints usage" './busybox_shell echo -h | grep -q "Usage:"'
 run_test "echo json includes text" './busybox_shell echo --json hello world | grep -q "\"text\":\"hello world\""'
 
+print_section "Testing BNFC grammar extensions"
+run_test "variable assignment expands value" \
+    "printf 'x=5\necho \$x\nexit\n' | ./busybox_shell | grep -q '5'"
+run_test "variable can store subcommand output" \
+    "printf 'x=\`echo hi\`\necho \$x\nexit\n' | ./busybox_shell | grep -q 'hi'"
+run_test "backtick subcommand expands as argument" \
+    "printf 'echo \`echo hi\`\nexit\n' | ./busybox_shell | grep -q 'hi'"
+run_test "if true runs then body" \
+    "printf 'if echo cond then echo yes fi\nexit\n' | ./busybox_shell | grep -q 'yes'"
+run_test "if false skips then body" \
+    "! printf 'if missing-command then echo no fi\nexit\n' | ./busybox_shell | grep -q '^no$'"
+
 print_section "Testing whoami"
 run_test "whoami prints current user" './busybox_shell whoami | grep -q "$(whoami)"'
 run_test "whoami help prints usage" './busybox_shell whoami -h | grep -q "Usage:"'

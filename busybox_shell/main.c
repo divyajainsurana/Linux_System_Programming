@@ -19,6 +19,7 @@
 #define MAX_COMPLETIONS 128
 #define MAX_NL_CACHE 64
 #define MAX_PIPE_COMMANDS 16
+#define MAX_SHELL_VARIABLES 128
 #define SHELL_NAME "busybox_shell"
 #define SHELL_VERSION "1.0.0"
 #define HISTORY_FILE ".busybox_shell_history"
@@ -50,6 +51,16 @@ void register_all_builtin_commands(void);
 
 static int execute_pipeline(int command_count, int *argc_list, char ***argv_list);
 static int run_exec_child(int argc, char **argv);
+static int bnfc_dispatch_command_line(CommandLine commandline);
+static int bnfc_dispatch_job(Job job);
+
+struct shell_variable {
+    char *name;
+    char *value;
+};
+
+static struct shell_variable shell_variables[MAX_SHELL_VARIABLES];
+static int shell_variable_count;
 
 struct json_command_list_state {
     int first;
@@ -226,6 +237,103 @@ static char *shell_strdup(const char *text)
     }
 
     return copy;
+}
+
+static int is_valid_variable_name(const char *name)
+{
+    size_t index;
+
+    if (name == NULL || name[0] == '\0') {
+        return 0;
+    }
+
+    if (!((name[0] >= 'A' && name[0] <= 'Z') ||
+          (name[0] >= 'a' && name[0] <= 'z') ||
+          name[0] == '_')) {
+        return 0;
+    }
+
+    for (index = 1; name[index] != '\0'; index++) {
+        if (!((name[index] >= 'A' && name[index] <= 'Z') ||
+              (name[index] >= 'a' && name[index] <= 'z') ||
+              (name[index] >= '0' && name[index] <= '9') ||
+              name[index] == '_')) {
+            return 0;
+        }
+    }
+
+    return 1;
+}
+
+static const char *get_shell_variable(const char *name)
+{
+    int index;
+
+    for (index = 0; index < shell_variable_count; index++) {
+        if (strcmp(shell_variables[index].name, name) == 0) {
+            return shell_variables[index].value;
+        }
+    }
+
+    return "";
+}
+
+static int set_shell_variable(const char *name, const char *value)
+{
+    int index;
+    char *name_copy;
+    char *value_copy;
+
+    if (!is_valid_variable_name(name)) {
+        fprintf(stderr, "Invalid variable name: %s\n", name != NULL ? name : "");
+        return 1;
+    }
+
+    value_copy = shell_strdup(value != NULL ? value : "");
+    if (value_copy == NULL) {
+        fprintf(stderr, "Out of memory\n");
+        return 1;
+    }
+
+    for (index = 0; index < shell_variable_count; index++) {
+        if (strcmp(shell_variables[index].name, name) == 0) {
+            free(shell_variables[index].value);
+            shell_variables[index].value = value_copy;
+            return 0;
+        }
+    }
+
+    if (shell_variable_count >= MAX_SHELL_VARIABLES) {
+        free(value_copy);
+        fprintf(stderr, "Too many shell variables\n");
+        return 1;
+    }
+
+    name_copy = shell_strdup(name);
+    if (name_copy == NULL) {
+        free(value_copy);
+        fprintf(stderr, "Out of memory\n");
+        return 1;
+    }
+
+    shell_variables[shell_variable_count].name = name_copy;
+    shell_variables[shell_variable_count].value = value_copy;
+    shell_variable_count++;
+    return 0;
+}
+
+static void free_shell_variables(void)
+{
+    int index;
+
+    for (index = 0; index < shell_variable_count; index++) {
+        free(shell_variables[index].name);
+        free(shell_variables[index].value);
+        shell_variables[index].name = NULL;
+        shell_variables[index].value = NULL;
+    }
+
+    shell_variable_count = 0;
 }
 
 static int is_blank_line(const char *line)
@@ -912,21 +1020,165 @@ static void bnfc_collect_redirections(ListRedirection list,
     }
 }
 
+static void trim_command_substitution_output(char *text)
+{
+    size_t length;
+    size_t index;
+
+    if (text == NULL) {
+        return;
+    }
+
+    length = strlen(text);
+    while (length > 0 && (text[length - 1] == '\n' || text[length - 1] == '\r')) {
+        text[length - 1] = '\0';
+        length--;
+    }
+
+    for (index = 0; text[index] != '\0'; index++) {
+        if (text[index] == '\n' || text[index] == '\r' || text[index] == '\t') {
+            text[index] = ' ';
+        }
+    }
+}
+
+static char *bnfc_capture_subcommand(Word command, ListWord words)
+{
+    int pipefd[2];
+    pid_t pid;
+    char buffer[MAX_INPUT];
+    size_t used = 0;
+
+    if (pipe(pipefd) < 0) {
+        fprintf(stderr, "pipe: %s\n", strerror(errno));
+        return NULL;
+    }
+
+    pid = fork();
+    if (pid < 0) {
+        fprintf(stderr, "fork: %s\n", strerror(errno));
+        close(pipefd[0]);
+        close(pipefd[1]);
+        return NULL;
+    }
+
+    if (pid == 0) {
+        int status;
+        char *argv[MAX_ARGS];
+        int argc = 0;
+
+        close(pipefd[0]);
+        if (dup2(pipefd[1], STDOUT_FILENO) < 0) {
+            fprintf(stderr, "dup2: %s\n", strerror(errno));
+            _exit(1);
+        }
+        close(pipefd[1]);
+
+        argv[argc++] = command;
+        while (words != NULL && argc < MAX_ARGS - 1) {
+            argv[argc++] = words->word_;
+            words = words->listword_;
+        }
+        argv[argc] = NULL;
+
+        status = dispatch_command(argc, argv);
+        fflush(NULL);
+        _exit(status == 0 ? 0 : 1);
+    }
+
+    close(pipefd[1]);
+    while (used + 1 < sizeof(buffer)) {
+        ssize_t count = read(pipefd[0], buffer + used, sizeof(buffer) - used - 1);
+
+        if (count < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            fprintf(stderr, "read: %s\n", strerror(errno));
+            break;
+        }
+        if (count == 0) {
+            break;
+        }
+        used += (size_t) count;
+    }
+    close(pipefd[0]);
+
+    while (waitpid(pid, NULL, 0) < 0 && errno == EINTR) {
+    }
+
+    buffer[used] = '\0';
+    trim_command_substitution_output(buffer);
+    return shell_strdup(buffer);
+}
+
+static char *bnfc_expand_arg(Arg arg)
+{
+    if (arg == NULL) {
+        return shell_strdup("");
+    }
+
+    switch (arg->kind) {
+    case is_WordArg:
+        return shell_strdup(arg->u.wordArg_.word_);
+
+    case is_VariableArg:
+        return shell_strdup(get_shell_variable(arg->u.variableArg_.word_));
+
+    case is_SubcommandArg:
+        return bnfc_capture_subcommand(arg->u.subcommandArg_.word_,
+                                       arg->u.subcommandArg_.listword_);
+    }
+
+    return NULL;
+}
+
+static void bnfc_free_argv(int argc, char **argv)
+{
+    int index;
+
+    for (index = 0; index < argc; index++) {
+        free(argv[index]);
+        argv[index] = NULL;
+    }
+}
+
+static void bnfc_free_pipeline_argvs(int command_count, int *argc_list, char ***argv_list)
+{
+    int command_index;
+
+    for (command_index = 0; command_index < command_count; command_index++) {
+        bnfc_free_argv(argc_list[command_index], argv_list[command_index]);
+    }
+}
+
 static int bnfc_build_argv(CommandPart part, char **argv, int max_args)
 {
-    ListWord words;
+    ListArg args;
     int argc = 0;
 
     if (part == NULL || part->kind != is_MkCommandPart || max_args <= 1) {
         return 0;
     }
 
-    argv[argc++] = part->u.mkCommandPart_.word_;
-    words = part->u.mkCommandPart_.listword_;
+    argv[argc] = shell_strdup(part->u.mkCommandPart_.word_);
+    if (argv[argc] == NULL) {
+        fprintf(stderr, "Out of memory\n");
+        return 0;
+    }
+    argc++;
 
-    while (words != NULL && argc < max_args - 1) {
-        argv[argc++] = words->word_;
-        words = words->listword_;
+    args = part->u.mkCommandPart_.listarg_;
+
+    while (args != NULL && argc < max_args - 1) {
+        argv[argc] = bnfc_expand_arg(args->arg_);
+        if (argv[argc] == NULL) {
+            fprintf(stderr, "Failed to expand argument\n");
+            bnfc_free_argv(argc, argv);
+            return 0;
+        }
+        argc++;
+        args = args->listarg_;
     }
 
     argv[argc] = NULL;
@@ -1154,6 +1406,7 @@ static int bnfc_dispatch_command_line(CommandLine commandline)
     Pipeline pipeline;
     const char *input_file = NULL;
     const char *output_file = NULL;
+    int status;
 
     if (commandline == NULL || commandline->kind != is_CommandWithRedir) {
         return 1;
@@ -1164,20 +1417,78 @@ static int bnfc_dispatch_command_line(CommandLine commandline)
 
     pipeline = commandline->u.commandWithRedir_.pipeline_;
     if (bnfc_collect_pipeline(pipeline, argc_list, argv_list, argv_storage, &command_count) != 0) {
+        bnfc_free_pipeline_argvs(command_count, argc_list, argv_list);
         return 1;
     }
 
     if (command_count == 1) {
-        return bnfc_dispatch_simple_with_redirection(argc_list[0], argv_list[0],
-                                                    input_file, output_file);
+        status = bnfc_dispatch_simple_with_redirection(argc_list[0], argv_list[0],
+                                                       input_file, output_file);
+        bnfc_free_pipeline_argvs(command_count, argc_list, argv_list);
+        return status;
     }
 
     if (input_file != NULL || output_file != NULL) {
-        return bnfc_execute_pipeline_with_redirection(command_count, argc_list,
-                                                     argv_list, input_file, output_file);
+        status = bnfc_execute_pipeline_with_redirection(command_count, argc_list,
+                                                        argv_list, input_file, output_file);
+        bnfc_free_pipeline_argvs(command_count, argc_list, argv_list);
+        return status;
     }
 
-    return execute_pipeline(command_count, argc_list, argv_list);
+    status = execute_pipeline(command_count, argc_list, argv_list);
+    bnfc_free_pipeline_argvs(command_count, argc_list, argv_list);
+    return status;
+}
+
+static int bnfc_dispatch_assignment(Assignment assignment)
+{
+    char *value;
+    int status;
+
+    if (assignment == NULL || assignment->kind != is_SetVariable) {
+        return 1;
+    }
+
+    value = bnfc_expand_arg(assignment->u.setVariable_.arg_);
+    if (value == NULL) {
+        fprintf(stderr, "Failed to expand variable value\n");
+        return 1;
+    }
+
+    status = set_shell_variable(assignment->u.setVariable_.word_, value);
+    free(value);
+    return status;
+}
+
+static int bnfc_dispatch_job_list(ListJob jobs)
+{
+    int status = 0;
+
+    while (jobs != NULL) {
+        status = bnfc_dispatch_job(jobs->job_);
+        if (status < 0) {
+            return status;
+        }
+        jobs = jobs->listjob_;
+    }
+
+    return status;
+}
+
+static int bnfc_dispatch_if_statement(IfStatement ifstatement)
+{
+    int status;
+
+    if (ifstatement == NULL || ifstatement->kind != is_IfThenFi) {
+        return 1;
+    }
+
+    status = bnfc_dispatch_command_line(ifstatement->u.ifThenFi_.commandline_);
+    if (status == 0) {
+        return bnfc_dispatch_job_list(ifstatement->u.ifThenFi_.listjob_);
+    }
+
+    return status;
 }
 
 static int bnfc_dispatch_job(Job job)
@@ -1197,6 +1508,12 @@ static int bnfc_dispatch_job(Job job)
         fprintf(stderr, "Background jobs parsed, but BNFC execution does not handle them yet\n");
         (void) commandline;
         return 1;
+
+    case is_AssignmentJob:
+        return bnfc_dispatch_assignment(job->u.assignmentJob_.assignment_);
+
+    case is_IfJob:
+        return bnfc_dispatch_if_statement(job->u.ifJob_.ifstatement_);
     }
 
     return 1;
@@ -2156,9 +2473,12 @@ int main(int argc, char **argv)
     register_all_builtin_commands();
 
     if (argc < 2) {
-        return run_interactive_shell();
+        status = run_interactive_shell();
+        free_shell_variables();
+        return status;
     }
 
     status = dispatch_argv_line_with_bnfc(argc - 1, argv + 1);
+    free_shell_variables();
     return status < 0 ? 0 : status;
 }

@@ -56,10 +56,11 @@
   <text x="68" y="265" class="example">echo hello</text>
   <text x="68" y="300" class="example">echo hello | wc</text>
   <text x="68" y="335" class="example">pwd ; echo done</text>
-  <text x="68" y="370" class="example">cat | head -n 1 &lt; Makefile</text>
+  <text x="68" y="370" class="example">x=5 ; echo $x</text>
+  <text x="68" y="400" class="example">if echo ok then echo yes fi</text>
 
   <text x="916" y="334" text-anchor="middle" class="small">Word token accepts letters, digits,</text>
   <text x="916" y="356" text-anchor="middle" class="small">_, ., /, -, and backslash.</text>
-  <text x="916" y="392" text-anchor="middle" class="small">Quoted strings, variables, &&, ||,</text>
-  <text x="916" y="414" text-anchor="middle" class="small">and append &gt;&gt; are future grammar work.</text>
+  <text x="916" y="392" text-anchor="middle" class="small">Variables, simple backticks, and</text>
+  <text x="916" y="414" text-anchor="middle" class="small">simple if/then/fi are now parsed.</text>
 </svg>

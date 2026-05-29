@@ -6,6 +6,7 @@ Buffer.h
 Grammar.l
 Grammar.y
 Grammar.y.bak
+*.bak
 Lexer.c
 Parser.c
 Parser.h

@@ -116,3 +116,4 @@ test-bnfc: all
 	./$(TARGET) rmdir test_bnfc_dir
 	./$(TARGET) clear > /dev/null
 	printf "echo hello | wc\npwd ; echo done\necho hello > test_bnfc_out.tmp\ncat test_bnfc_out.tmp\nrm test_bnfc_out.tmp\nexit\n" | ./$(TARGET)
+	printf 'x=5\necho $$x\nx=`echo hi`\necho $$x\nif echo cond then echo yes fi\nexit\n' | ./$(TARGET)
