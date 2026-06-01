@@ -23,6 +23,7 @@
 #define SHELL_NAME "busybox_shell"
 #define SHELL_VERSION "1.0.0"
 #define HISTORY_FILE ".busybox_shell_history"
+#define INTERNAL_RUN_COMMAND_FLAG "__busybox_shell_run_command"
 
 static const char *shell_program_path;
 static char *history[MAX_HISTORY];
@@ -51,6 +52,9 @@ void register_all_builtin_commands(void);
 
 static int execute_pipeline(int command_count, int *argc_list, char ***argv_list);
 static int run_exec_child(int argc, char **argv);
+static int execute_command_process(int argc, char **argv,
+                                   const char *input_file,
+                                   const char *output_file);
 static int bnfc_dispatch_command_line(CommandLine commandline);
 static int bnfc_dispatch_job(Job job);
 
@@ -976,8 +980,9 @@ static int dispatch_command(int argc, char **argv)
     cmd = find_command(argv[0]);
 
     if (!cmd) {
-        fprintf(stderr, "Unknown command: %s\n", argv[0]);
-        return 1;
+        execvp(argv[0], argv);
+        fprintf(stderr, "%s: %s\n", argv[0], strerror(errno));
+        return 127;
     }
 
     if (has_arg(argc, argv, NULL, "--version")) {
@@ -1063,7 +1068,6 @@ static char *bnfc_capture_subcommand(Word command, ListWord words)
     }
 
     if (pid == 0) {
-        int status;
         char *argv[MAX_ARGS];
         int argc = 0;
 
@@ -1081,9 +1085,7 @@ static char *bnfc_capture_subcommand(Word command, ListWord words)
         }
         argv[argc] = NULL;
 
-        status = dispatch_command(argc, argv);
-        fflush(NULL);
-        _exit(status == 0 ? 0 : 1);
+        run_exec_child(argc, argv);
     }
 
     close(pipefd[1]);
@@ -1249,49 +1251,12 @@ static int bnfc_dispatch_simple_with_redirection(int argc,
                                                 const char *input_file,
                                                 const char *output_file)
 {
-    int saved_stdin = -1;
-    int saved_stdout = -1;
-    int status;
-
-    if (input_file != NULL) {
-        saved_stdin = dup(STDIN_FILENO);
-        if (saved_stdin < 0 ||
-            bnfc_redirect_fd(input_file, STDIN_FILENO, O_RDONLY, 0) != 0) {
-            if (saved_stdin >= 0) {
-                close(saved_stdin);
-            }
-            return 1;
-        }
+    if (argc > 0 &&
+        (strcmp(argv[0], "exit") == 0 || strcmp(argv[0], "quit") == 0)) {
+        return dispatch_command(argc, argv);
     }
 
-    if (output_file != NULL) {
-        saved_stdout = dup(STDOUT_FILENO);
-        if (saved_stdout < 0 ||
-            bnfc_redirect_fd(output_file, STDOUT_FILENO,
-                             O_WRONLY | O_CREAT | O_TRUNC, 0644) != 0) {
-            if (saved_stdin >= 0) {
-                dup2(saved_stdin, STDIN_FILENO);
-                close(saved_stdin);
-            }
-            if (saved_stdout >= 0) {
-                close(saved_stdout);
-            }
-            return 1;
-        }
-    }
-
-    status = dispatch_command(argc, argv);
-
-    if (saved_stdout >= 0) {
-        dup2(saved_stdout, STDOUT_FILENO);
-        close(saved_stdout);
-    }
-    if (saved_stdin >= 0) {
-        dup2(saved_stdin, STDIN_FILENO);
-        close(saved_stdin);
-    }
-
-    return status;
+    return execute_command_process(argc, argv, input_file, output_file);
 }
 
 static int bnfc_execute_pipeline_with_redirection(int command_count,
@@ -1550,18 +1515,69 @@ static int line_contains_shell_syntax(const char *line)
 
 static int run_exec_child(int argc, char **argv)
 {
-    char *child_argv[MAX_ARGS + 2];
+    char *child_argv[MAX_ARGS + 3];
     int index;
 
     child_argv[0] = (char *) shell_program_path;
-    for (index = 0; index < argc && index + 2 < MAX_ARGS + 2; index++) {
-        child_argv[index + 1] = argv[index];
+    child_argv[1] = INTERNAL_RUN_COMMAND_FLAG;
+    for (index = 0; index < argc && index + 3 < MAX_ARGS + 3; index++) {
+        child_argv[index + 2] = argv[index];
     }
-    child_argv[index + 1] = NULL;
+    child_argv[index + 2] = NULL;
 
     execvp(child_argv[0], child_argv);
     fprintf(stderr, "%s: execvp: %s\n", child_argv[0], strerror(errno));
     _exit(127);
+}
+
+static int execute_command_process(int argc, char **argv,
+                                   const char *input_file,
+                                   const char *output_file)
+{
+    pid_t pid;
+    int status;
+
+    if (argc <= 0) {
+        return 0;
+    }
+
+    if (shell_program_path == NULL || shell_program_path[0] == '\0') {
+        shell_program_path = "./busybox_shell";
+    }
+
+    pid = fork();
+    if (pid < 0) {
+        fprintf(stderr, "fork: %s\n", strerror(errno));
+        return 1;
+    }
+
+    if (pid == 0) {
+        if (input_file != NULL &&
+            bnfc_redirect_fd(input_file, STDIN_FILENO, O_RDONLY, 0) != 0) {
+            _exit(1);
+        }
+
+        if (output_file != NULL &&
+            bnfc_redirect_fd(output_file, STDOUT_FILENO,
+                             O_WRONLY | O_CREAT | O_TRUNC, 0644) != 0) {
+            _exit(1);
+        }
+
+        run_exec_child(argc, argv);
+    }
+
+    if (waitpid(pid, &status, 0) < 0) {
+        fprintf(stderr, "waitpid: %s\n", strerror(errno));
+        return 1;
+    }
+
+    if (WIFEXITED(status)) {
+        return WEXITSTATUS(status);
+    }
+    if (WIFSIGNALED(status)) {
+        return 128 + WTERMSIG(status);
+    }
+    return 1;
 }
 
 static int execute_pipeline(int command_count, int *argc_list, char ***argv_list)
@@ -2471,6 +2487,12 @@ int main(int argc, char **argv)
 
     shell_program_path = argv[0];
     register_all_builtin_commands();
+
+    if (argc >= 2 && strcmp(argv[1], INTERNAL_RUN_COMMAND_FLAG) == 0) {
+        status = dispatch_command(argc - 2, argv + 2);
+        free_shell_variables();
+        return status < 0 ? 0 : status;
+    }
 
     if (argc < 2) {
         status = run_interactive_shell();

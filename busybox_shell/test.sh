@@ -275,6 +275,9 @@ run_test "uname json includes sysname" './busybox_shell uname --json | grep -q "
 run_test "clear runs" './busybox_shell clear'
 run_test "clear help prints description" './busybox_shell clear -h | grep -q "Clear the terminal screen."'
 run_test "clear json reports cleared" './busybox_shell clear --json | grep -q "\"cleared\":true"'
+run_test "external /bin/echo runs" './busybox_shell /bin/echo external-ok | grep -q "^external-ok$"'
+run_test "external command can run in pipeline" './busybox_shell /bin/echo external pipeline "|" wc -w | grep -q "2"'
+run_test "external date accepts plus format" './busybox_shell date +%Y | grep -q "$(date +%Y)"'
 
 print_section "Testing process and thread support"
 run_test "pipeline uses process path" './busybox_shell echo alpha beta gamma "|" wc -w | grep -q "3"'
