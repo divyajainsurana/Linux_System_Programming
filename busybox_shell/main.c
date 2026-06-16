@@ -23,6 +23,7 @@
 #define MAX_PIPE_COMMANDS 16
 #define MAX_SHELL_VARIABLES 128
 #define MAX_JOBS 32
+#define OPENROUTER_MAX_RESPONSE 16384
 #define SHELL_NAME "busybox_shell"
 #define SHELL_VERSION "1.0.0"
 #define HISTORY_FILE ".busybox_shell_history"
@@ -2699,6 +2700,282 @@ static int extract_url_from_request(const char *request, char *url, size_t url_s
     return url[0] != '\0';
 }
 
+static void append_json_escaped(char *out, size_t out_size, const char *text)
+{
+    size_t used = strlen(out);
+    const unsigned char *cursor = (const unsigned char *) text;
+
+    while (*cursor != '\0' && used + 2 < out_size) {
+        char escaped[8];
+
+        if (*cursor == '"' || *cursor == '\\') {
+            snprintf(escaped, sizeof(escaped), "\\%c", *cursor);
+        } else if (*cursor == '\n') {
+            snprintf(escaped, sizeof(escaped), "\\n");
+        } else if (*cursor == '\r') {
+            snprintf(escaped, sizeof(escaped), "\\r");
+        } else if (*cursor == '\t') {
+            snprintf(escaped, sizeof(escaped), "\\t");
+        } else if (*cursor < 0x20) {
+            snprintf(escaped, sizeof(escaped), "\\u%04x", *cursor);
+        } else {
+            escaped[0] = (char) *cursor;
+            escaped[1] = '\0';
+        }
+
+        if (used + strlen(escaped) + 1 >= out_size) {
+            break;
+        }
+        strcat(out, escaped);
+        used += strlen(escaped);
+        cursor++;
+    }
+}
+
+static void append_shell_single_quoted(char *out, size_t out_size, const char *text)
+{
+    size_t used = strlen(out);
+    const char *cursor;
+
+    if (used + 2 >= out_size) {
+        return;
+    }
+    strncat(out, "'", out_size - strlen(out) - 1);
+
+    for (cursor = text; *cursor != '\0'; cursor++) {
+        if (*cursor == '\'') {
+            strncat(out, "'\\''", out_size - strlen(out) - 1);
+        } else {
+            char one[2] = {*cursor, '\0'};
+            strncat(out, one, out_size - strlen(out) - 1);
+        }
+        if (strlen(out) + 2 >= out_size) {
+            break;
+        }
+    }
+
+    strncat(out, "'", out_size - strlen(out) - 1);
+}
+
+static int write_openrouter_request_file(const char *request,
+                                         const char *model,
+                                         char *path,
+                                         size_t path_size)
+{
+    char body[4096];
+    int fd;
+    FILE *file;
+
+    snprintf(path, path_size, "/tmp/busybox_openrouter_XXXXXX");
+    fd = mkstemp(path);
+    if (fd < 0) {
+        return 0;
+    }
+
+    body[0] = '\0';
+    strncat(body, "{\"model\":\"", sizeof(body) - strlen(body) - 1);
+    append_json_escaped(body, sizeof(body), model);
+    strncat(body, "\",\"messages\":[", sizeof(body) - strlen(body) - 1);
+    strncat(body, "{\"role\":\"system\",\"content\":\"", sizeof(body) - strlen(body) - 1);
+    append_json_escaped(body, sizeof(body),
+        "You are an AiShell command planner. Return exactly one safe command "
+        "for this C BusyBox shell. Use only these commands: help, ls, cat, "
+        "pkg, pwd, wc, touch, mkdir, rmdir, echo, whoami, clear, id, uname, "
+        "head, tail, cp, mv, rm, dirname, du, procinfo, threads, rpc, serve. "
+        "Do not use pipes, redirects, semicolons, backticks, variables, or explanations.");
+    strncat(body, "\"},{\"role\":\"user\",\"content\":\"", sizeof(body) - strlen(body) - 1);
+    append_json_escaped(body, sizeof(body), request);
+    strncat(body, "\"}],\"temperature\":0,\"max_tokens\":64}", sizeof(body) - strlen(body) - 1);
+
+    file = fdopen(fd, "w");
+    if (file == NULL) {
+        close(fd);
+        unlink(path);
+        return 0;
+    }
+    fputs(body, file);
+    fclose(file);
+    return 1;
+}
+
+static int json_unescape_string(const char *start, char *out, size_t out_size)
+{
+    size_t used = 0;
+    const char *cursor = start;
+
+    while (*cursor != '\0' && *cursor != '"' && used + 1 < out_size) {
+        if (*cursor == '\\') {
+            cursor++;
+            if (*cursor == '\0') {
+                break;
+            }
+            switch (*cursor) {
+            case 'n':
+                out[used++] = '\n';
+                break;
+            case 'r':
+                out[used++] = '\r';
+                break;
+            case 't':
+                out[used++] = '\t';
+                break;
+            case '"':
+            case '\\':
+            case '/':
+                out[used++] = *cursor;
+                break;
+            case 'u':
+                out[used++] = '?';
+                if (strlen(cursor) >= 4) {
+                    cursor += 4;
+                } else {
+                    while (cursor[1] != '\0') {
+                        cursor++;
+                    }
+                }
+                break;
+            default:
+                out[used++] = *cursor;
+                break;
+            }
+        } else {
+            out[used++] = *cursor;
+        }
+        cursor++;
+    }
+    out[used] = '\0';
+    return used > 0;
+}
+
+static void clean_ai_command(char *command)
+{
+    char *start = command;
+    char *end;
+    char *newline;
+
+    while (*start == ' ' || *start == '\t' || *start == '`') {
+        start++;
+    }
+    if (strncmp(start, "sh\n", 3) == 0) {
+        start += 3;
+    }
+    if (strncmp(start, "bash\n", 5) == 0) {
+        start += 5;
+    }
+    if (strncmp(start, "```", 3) == 0) {
+        start += 3;
+    }
+    while (*start == ' ' || *start == '\t' || *start == '\n' || *start == '\r') {
+        start++;
+    }
+    if (start != command) {
+        memmove(command, start, strlen(start) + 1);
+    }
+
+    newline = strpbrk(command, "\r\n");
+    if (newline != NULL) {
+        *newline = '\0';
+    }
+
+    end = command + strlen(command);
+    while (end > command &&
+           (end[-1] == ' ' || end[-1] == '\t' || end[-1] == '`')) {
+        end--;
+    }
+    *end = '\0';
+}
+
+static int parse_openrouter_command(const char *response,
+                                    char *command,
+                                    size_t command_size)
+{
+    const char *content = strstr(response, "\"content\"");
+    const char *colon;
+    const char *quote;
+
+    if (content == NULL) {
+        return 0;
+    }
+
+    colon = strchr(content, ':');
+    if (colon == NULL) {
+        return 0;
+    }
+
+    quote = strchr(colon, '"');
+    if (quote == NULL) {
+        return 0;
+    }
+
+    if (!json_unescape_string(quote + 1, command, command_size)) {
+        return 0;
+    }
+    clean_ai_command(command);
+    return command[0] != '\0';
+}
+
+static int openrouter_nl_to_command(const char *request,
+                                    char *command,
+                                    size_t command_size)
+{
+    const char *api_key = getenv("OPENROUTER_API_KEY");
+    const char *model = getenv("OPENROUTER_MODEL");
+    char request_path[128];
+    char shell_command[1024];
+    char auth_header[512];
+    char response[OPENROUTER_MAX_RESPONSE];
+    FILE *pipe;
+    size_t used = 0;
+    int rc;
+
+    if (api_key == NULL || api_key[0] == '\0') {
+        return 0;
+    }
+    if (model == NULL || model[0] == '\0') {
+        model = "qwen/qwen-2.5-7b-instruct";
+    }
+    if (!write_openrouter_request_file(request, model,
+                                       request_path, sizeof(request_path))) {
+        return 0;
+    }
+
+    shell_command[0] = '\0';
+    strncat(shell_command, "curl -sS --max-time 20 ", sizeof(shell_command) - strlen(shell_command) - 1);
+    strncat(shell_command, "-H ", sizeof(shell_command) - strlen(shell_command) - 1);
+    append_shell_single_quoted(shell_command, sizeof(shell_command), "Content-Type: application/json");
+    strncat(shell_command, " -H ", sizeof(shell_command) - strlen(shell_command) - 1);
+    snprintf(auth_header, sizeof(auth_header), "Authorization: Bearer %s", api_key);
+    append_shell_single_quoted(shell_command, sizeof(shell_command), auth_header);
+    strncat(shell_command, " --data-binary @", sizeof(shell_command) - strlen(shell_command) - 1);
+    append_shell_single_quoted(shell_command, sizeof(shell_command), request_path);
+    strncat(shell_command, " https://openrouter.ai/api/v1/chat/completions 2>/dev/null",
+            sizeof(shell_command) - strlen(shell_command) - 1);
+
+    pipe = popen(shell_command, "r");
+    if (pipe == NULL) {
+        unlink(request_path);
+        return 0;
+    }
+
+    response[0] = '\0';
+    while (used + 1 < sizeof(response)) {
+        size_t got = fread(response + used, 1, sizeof(response) - used - 1, pipe);
+        used += got;
+        response[used] = '\0';
+        if (got == 0) {
+            break;
+        }
+    }
+
+    rc = pclose(pipe);
+    unlink(request_path);
+    if (rc != 0 || used == 0) {
+        return 0;
+    }
+
+    return parse_openrouter_command(response, command, command_size);
+}
+
 static int agent_request_to_rpc_command(const char *request,
                                         char *command,
                                         size_t command_size)
@@ -2944,14 +3221,18 @@ static int handle_natural_language_request(const char *line, int interactive_ter
     }
 
     if (clarified == 0) {
-        if (!fallback_nl_to_command(request, command, sizeof(command))) {
+        if (!(interactive_terminal &&
+              openrouter_nl_to_command(request, command, sizeof(command))) &&
+            !fallback_nl_to_command(request, command, sizeof(command))) {
             printf("AI suggestion unavailable. Try a simpler request or use @ agent for RPC tools.\n");
             return 1;
         }
     }
 
     if (clarified == 0 && is_blank_line(command)) {
-        if (!fallback_nl_to_command(request, command, sizeof(command))) {
+        if (!(interactive_terminal &&
+              openrouter_nl_to_command(request, command, sizeof(command))) &&
+            !fallback_nl_to_command(request, command, sizeof(command))) {
             printf("AI suggestion unavailable. Try a simpler request or use @ agent for RPC tools.\n");
             return 1;
         }

@@ -94,9 +94,24 @@ AI suggestion: mkdir reports
 Run it? [y/N] y
 ```
 
-The Week 10 submission keeps this path C-only. The natural-language mode uses
-deterministic command mapping inside `main.c`, validates the suggested command,
-and asks for confirmation before running it.
+The Week 10 submission keeps this path C-only. In interactive mode, if
+`OPENROUTER_API_KEY` is set, `main.c` sends the request to OpenRouter using a
+C-built JSON request and a `curl` subprocess, extracts the returned command,
+validates it, and asks for confirmation before running it. If the key is not
+set or the network/API call fails, the shell falls back to the deterministic C
+command mapper.
+
+```sh
+export OPENROUTER_API_KEY="your_api_key"
+export OPENROUTER_MODEL="qwen/qwen-2.5-7b-instruct"
+./busybox_shell
+```
+
+```text
+busybox_shell> @ show hidden files with details
+AI suggestion: ls -a -l
+Run it? [y/N]
+```
 
 For an agent-style tool call demo, start the C shell service and use
 `@ agent ...`. The shell translates the request into an `rpc` tool call:

@@ -2,7 +2,8 @@
 
 This submission is a C-based BusyBox-style shell that grows across Sessions 1
 through 10 of the course. The active shell path is implemented in C. The Week 10
-natural-language and agent demos do not require Python helpers.
+natural-language and agent demos do not require Python helpers. The OpenRouter
+AI path is also implemented from C.
 
 ## Build
 
@@ -47,7 +48,7 @@ Run the full verification suite:
 | BNFC parser | Grammar parses commands, pipes, redirection, variables, backticks, and simple `if`. | `x=5`, `echo $x` |
 | RPC client | C socket client command with timeout and line protocol. | `rpc call_tool get_time` |
 | Socket service | C server endpoint with tool discovery and safe tool calls. | `serve --host 127.0.0.1 --port 9000` |
-| Natural-language mode | C deterministic mapper with confirmation gate. | `@ list files` |
+| Natural-language mode | Interactive C OpenRouter client when `OPENROUTER_API_KEY` is set, plus deterministic C fallback and confirmation gate. | `@ list files` |
 | Agent-style mode | C `@ agent` mapper suggests `rpc` tool calls. | `@ agent list tools` |
 
 ## Registered Commands
@@ -89,6 +90,54 @@ void register_all_builtin_commands(void)
     register_serve_command();
 }
 ```
+
+## OpenRouter AI Agent In C
+
+No Python helper is required. The shell implements OpenRouter support in
+`main.c`:
+
+```c
+static int openrouter_nl_to_command(const char *request,
+                                    char *command,
+                                    size_t command_size)
+{
+    const char *api_key = getenv("OPENROUTER_API_KEY");
+    ...
+}
+```
+
+The flow is:
+
+```text
+@ natural-language request
+  -> C builds OpenRouter JSON
+  -> C runs curl with the API key
+  -> C parses choices[0].message.content
+  -> C validates the command
+  -> shell asks Run it? [y/N]
+```
+
+Run with OpenRouter:
+
+```sh
+export OPENROUTER_API_KEY="your_api_key"
+export OPENROUTER_MODEL="qwen/qwen-2.5-7b-instruct"
+cd busybox_shell
+make
+./busybox_shell
+```
+
+Example:
+
+```text
+busybox_shell> @ show hidden files with details
+AI suggestion: ls -a -l
+Run it? [y/N]
+```
+
+If `OPENROUTER_API_KEY` is not set, or when commands are piped into the shell
+for automated tests, the same `@` interface still works using the local
+deterministic C fallback mapper.
 
 ## Process, Jobs, And Signals Demo
 
