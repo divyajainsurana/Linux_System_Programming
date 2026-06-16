@@ -139,6 +139,8 @@ static int rpc_send_request(const char *host, const char *port,
     char response[RPC_RESPONSE_SIZE];
     int fd;
     ssize_t count;
+    int got_response = 0;
+    int complete_line = 0;
 
     fd = rpc_connect(host, port);
     if (fd < 0) {
@@ -168,6 +170,10 @@ static int rpc_send_request(const char *host, const char *port,
 
     while ((count = read(fd, response, sizeof(response) - 1)) > 0) {
         response[count] = '\0';
+        got_response = 1;
+        if (strchr(response, '\n') != NULL) {
+            complete_line = 1;
+        }
         if (json) {
             char *cursor = response;
 
@@ -178,13 +184,17 @@ static int rpc_send_request(const char *host, const char *port,
         } else {
             fputs(response, stdout);
         }
+        if (complete_line) {
+            break;
+        }
     }
 
     if (json) {
         printf("\"}\n");
     }
 
-    if (count < 0) {
+    if (count < 0 &&
+        !(got_response && (errno == EAGAIN || errno == EWOULDBLOCK))) {
         fprintf(stderr, "rpc: read: %s\n", strerror(errno));
         close(fd);
         return 1;
