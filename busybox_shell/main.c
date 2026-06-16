@@ -4,6 +4,8 @@
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <glob.h>
+#include <signal.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <termios.h>
@@ -20,6 +22,7 @@
 #define MAX_NL_CACHE 64
 #define MAX_PIPE_COMMANDS 16
 #define MAX_SHELL_VARIABLES 128
+#define MAX_JOBS 32
 #define SHELL_NAME "busybox_shell"
 #define SHELL_VERSION "1.0.0"
 #define HISTORY_FILE ".busybox_shell_history"
@@ -57,6 +60,7 @@ static int execute_command_process(int argc, char **argv,
                                    const char *output_file);
 static int bnfc_dispatch_command_line(CommandLine commandline);
 static int bnfc_dispatch_job(Job job);
+static int dispatch_command(int argc, char **argv);
 
 struct shell_variable {
     char *name;
@@ -65,6 +69,22 @@ struct shell_variable {
 
 static struct shell_variable shell_variables[MAX_SHELL_VARIABLES];
 static int shell_variable_count;
+
+enum job_state {
+    JOB_RUNNING,
+    JOB_DONE,
+};
+
+struct shell_job {
+    int id;
+    pid_t pid;
+    enum job_state state;
+    char command[MAX_INPUT];
+};
+
+static struct shell_job shell_jobs[MAX_JOBS];
+static int shell_job_count;
+static int next_job_id = 1;
 
 struct json_command_list_state {
     int first;
@@ -83,6 +103,11 @@ static void print_shell_help(FILE *out)
     fprintf(out, "  %-12s %s\n", "help", "show this help, or help for a command");
     fprintf(out, "  %-12s %s\n", "exit", "exit the shell");
     fprintf(out, "  %-12s %s\n", "quit", "exit the shell");
+    fprintf(out, "  %-12s %s\n", "jobs", "list background jobs started with &");
+    fprintf(out, "  %-12s %s\n", "fg", "wait for a background job in the foreground");
+    fprintf(out, "  %-12s %s\n", "bg", "continue a background job");
+    fprintf(out, "  %-12s %s\n", "kill", "send a signal to a job or process");
+    fprintf(out, "  %-12s %s\n", "shellpid", "print this shell process id");
 
     fprintf(out, "\nRegistered commands:\n");
     for_each_command(print_command_summary, out);
@@ -92,6 +117,8 @@ static void print_shell_help(FILE *out)
     fprintf(out, "  %-20s %s\n", "help --json", "list commands in JSON format");
     fprintf(out, "  %-20s %s\n", "help <command> --json", "show command help metadata as JSON");
     fprintf(out, "  %-20s %s\n", "@ <request>", "ask for an AI command suggestion");
+    fprintf(out, "  %-20s %s\n", "command &", "start a command as a background job");
+    fprintf(out, "  %-20s %s\n", "fg %1 / kill %1", "control jobs by job number");
 }
 
 static void print_common_command_options(FILE *out)
@@ -100,6 +127,352 @@ static void print_common_command_options(FILE *out)
     fprintf(out, "  %-20s %s\n", "--version", "show command version and exit");
     fprintf(out, "  %-20s %s\n", "--version --json", "show command version as JSON");
     fprintf(out, "  %-20s %s\n", "-h, --help --json", "show command help metadata as JSON");
+}
+
+static const char *job_state_name(enum job_state state)
+{
+    return state == JOB_DONE ? "Done" : "Running";
+}
+
+static void reap_background_jobs(void)
+{
+    int index;
+
+    for (index = 0; index < shell_job_count; index++) {
+        int status;
+        pid_t result;
+
+        if (shell_jobs[index].state == JOB_DONE) {
+            continue;
+        }
+
+        result = waitpid(shell_jobs[index].pid, &status, WNOHANG);
+        if (result == shell_jobs[index].pid) {
+            shell_jobs[index].state = JOB_DONE;
+        }
+    }
+}
+
+static struct shell_job *find_job_by_id(int id)
+{
+    int index;
+
+    reap_background_jobs();
+    for (index = 0; index < shell_job_count; index++) {
+        if (shell_jobs[index].id == id) {
+            return &shell_jobs[index];
+        }
+    }
+    return NULL;
+}
+
+static struct shell_job *find_recent_job(void)
+{
+    int index;
+
+    reap_background_jobs();
+    for (index = shell_job_count - 1; index >= 0; index--) {
+        if (shell_jobs[index].state == JOB_RUNNING) {
+            return &shell_jobs[index];
+        }
+    }
+    return shell_job_count > 0 ? &shell_jobs[shell_job_count - 1] : NULL;
+}
+
+static int parse_job_reference(const char *text, int *job_id, pid_t *pid)
+{
+    char *end = NULL;
+    long value;
+
+    *job_id = 0;
+    *pid = 0;
+
+    if (text == NULL || text[0] == '\0') {
+        return 0;
+    }
+
+    if (text[0] == '%') {
+        value = strtol(text + 1, &end, 10);
+        if (end == text + 1 || *end != '\0' || value <= 0) {
+            return 0;
+        }
+        *job_id = (int) value;
+        return 1;
+    }
+
+    value = strtol(text, &end, 10);
+    if (end == text || *end != '\0' || value <= 0) {
+        return 0;
+    }
+    *pid = (pid_t) value;
+    return 1;
+}
+
+static const char *signal_name(int signal_number)
+{
+    switch (signal_number) {
+    case SIGTERM:
+        return "SIGTERM";
+    case SIGKILL:
+        return "SIGKILL";
+    case SIGINT:
+        return "SIGINT";
+    case SIGCONT:
+        return "SIGCONT";
+    case SIGSTOP:
+        return "SIGSTOP";
+    case SIGTSTP:
+        return "SIGTSTP";
+    default:
+        return "signal";
+    }
+}
+
+static void format_argv_command(int argc, char **argv, char *out, size_t out_size)
+{
+    int index;
+    size_t used = 0;
+
+    if (out_size == 0) {
+        return;
+    }
+
+    out[0] = '\0';
+    for (index = 0; index < argc; index++) {
+        int written;
+
+        written = snprintf(out + used,
+                           out_size - used,
+                           "%s%s",
+                           index == 0 ? "" : " ",
+                           argv[index]);
+        if (written < 0) {
+            return;
+        }
+        if ((size_t) written >= out_size - used) {
+            out[out_size - 1] = '\0';
+            return;
+        }
+        used += (size_t) written;
+    }
+}
+
+static int add_background_job(pid_t pid, const char *command)
+{
+    struct shell_job *job;
+
+    reap_background_jobs();
+    if (shell_job_count >= MAX_JOBS) {
+        fprintf(stderr, "jobs: job table full\n");
+        return 1;
+    }
+
+    job = &shell_jobs[shell_job_count++];
+    job->id = next_job_id++;
+    job->pid = pid;
+    job->state = JOB_RUNNING;
+    snprintf(job->command, sizeof(job->command), "%s", command);
+
+    printf("[%d] %d\n", job->id, (int) job->pid);
+    return 0;
+}
+
+static int jobs_builtin(int argc, char **argv)
+{
+    int index;
+    int long_format = argc > 1 && strcmp(argv[1], "-l") == 0;
+
+    (void) argc;
+    reap_background_jobs();
+    for (index = 0; index < shell_job_count; index++) {
+        struct shell_job *job = &shell_jobs[index];
+
+        if (long_format) {
+            printf("[%d] %-8s %d %s\n",
+                   job->id,
+                   job_state_name(job->state),
+                   (int) job->pid,
+                   job->command);
+        } else {
+            printf("[%d] %-8s %s\n",
+                   job->id,
+                   job_state_name(job->state),
+                   job->command);
+        }
+    }
+    return 0;
+}
+
+static int fg_builtin(int argc, char **argv)
+{
+    struct shell_job *job;
+    int job_id;
+    pid_t pid;
+    int status;
+
+    if (argc > 2) {
+        fprintf(stderr, "Usage: fg [%%JOB]\n");
+        return 1;
+    }
+
+    if (argc == 1) {
+        job = find_recent_job();
+    } else {
+        if (!parse_job_reference(argv[1], &job_id, &pid) || job_id == 0) {
+            fprintf(stderr, "fg: expected job reference like %%1\n");
+            return 1;
+        }
+        job = find_job_by_id(job_id);
+    }
+
+    if (job == NULL) {
+        fprintf(stderr, "fg: no such job\n");
+        return 1;
+    }
+
+    printf("%s\n", job->command);
+    kill(-job->pid, SIGCONT);
+    if (waitpid(job->pid, &status, 0) < 0) {
+        fprintf(stderr, "fg: waitpid: %s\n", strerror(errno));
+        return 1;
+    }
+    job->state = JOB_DONE;
+
+    if (WIFEXITED(status)) {
+        return WEXITSTATUS(status);
+    }
+    if (WIFSIGNALED(status)) {
+        return 128 + WTERMSIG(status);
+    }
+    return 0;
+}
+
+static int bg_builtin(int argc, char **argv)
+{
+    struct shell_job *job;
+    int job_id;
+    pid_t pid;
+
+    if (argc > 2) {
+        fprintf(stderr, "Usage: bg [%%JOB]\n");
+        return 1;
+    }
+
+    if (argc == 1) {
+        job = find_recent_job();
+    } else {
+        if (!parse_job_reference(argv[1], &job_id, &pid) || job_id == 0) {
+            fprintf(stderr, "bg: expected job reference like %%1\n");
+            return 1;
+        }
+        job = find_job_by_id(job_id);
+    }
+
+    if (job == NULL) {
+        fprintf(stderr, "bg: no such job\n");
+        return 1;
+    }
+
+    if (kill(-job->pid, SIGCONT) < 0 && kill(job->pid, SIGCONT) < 0) {
+        fprintf(stderr, "bg: %s\n", strerror(errno));
+        return 1;
+    }
+
+    job->state = JOB_RUNNING;
+    printf("[%d] %d %s\n", job->id, (int) job->pid, job->command);
+    return 0;
+}
+
+static int kill_builtin(int argc, char **argv)
+{
+    int signal_number = SIGTERM;
+    int arg_index = 1;
+    int job_id;
+    pid_t pid;
+    struct shell_job *job = NULL;
+
+    if (argc < 2 || argc > 3) {
+        fprintf(stderr, "Usage: kill [-SIGNAL] %%JOB|PID\n");
+        return 1;
+    }
+
+    if (argv[arg_index][0] == '-' && argv[arg_index][1] != '\0') {
+        char *end = NULL;
+        long value = strtol(argv[arg_index] + 1, &end, 10);
+
+        if (end == argv[arg_index] + 1 || *end != '\0' || value <= 0) {
+            fprintf(stderr, "kill: expected numeric signal like -9\n");
+            return 1;
+        }
+        signal_number = (int) value;
+        arg_index++;
+    }
+
+    if (arg_index >= argc ||
+        !parse_job_reference(argv[arg_index], &job_id, &pid)) {
+        fprintf(stderr, "Usage: kill [-SIGNAL] %%JOB|PID\n");
+        return 1;
+    }
+
+    if (job_id != 0) {
+        job = find_job_by_id(job_id);
+        if (job == NULL) {
+            fprintf(stderr, "kill: no such job\n");
+            return 1;
+        }
+        if (job->state == JOB_DONE) {
+            printf("[%d] Done     %d %s\n",
+                   job->id,
+                   (int) job->pid,
+                   job->command);
+            return 0;
+        }
+        pid = job->pid;
+    }
+
+    if (kill(-pid, signal_number) < 0 && kill(pid, signal_number) < 0) {
+        if (errno == ESRCH && job != NULL) {
+            job->state = JOB_DONE;
+            printf("[%d] Done     %d %s\n",
+                   job->id,
+                   (int) job->pid,
+                   job->command);
+            return 0;
+        }
+        fprintf(stderr, "kill: %s\n", strerror(errno));
+        return 1;
+    }
+
+    if (job != NULL) {
+        job->state = JOB_DONE;
+        printf("sent %s (%d) to job %%%d pid %d\n",
+               signal_name(signal_number),
+               signal_number,
+               job->id,
+               (int) pid);
+    } else {
+        printf("sent %s (%d) to pid %d\n",
+               signal_name(signal_number),
+               signal_number,
+               (int) pid);
+    }
+    return 0;
+}
+
+static int shellpid_builtin(int argc, char **argv)
+{
+    (void) argv;
+
+    if (argc != 1) {
+        fprintf(stderr, "Usage: shellpid\n");
+        return 1;
+    }
+
+    printf("busybox_shell pid=%d ppid=%d pgid=%d\n",
+           (int) getpid(),
+           (int) getppid(),
+           (int) getpgrp());
+    return 0;
 }
 
 static int has_arg(int argc, char **argv, const char *short_arg, const char *long_arg)
@@ -977,6 +1350,26 @@ static int dispatch_command(int argc, char **argv)
         return 0;
     }
 
+    if (strcmp(argv[0], "jobs") == 0) {
+        return jobs_builtin(argc, argv);
+    }
+
+    if (strcmp(argv[0], "fg") == 0) {
+        return fg_builtin(argc, argv);
+    }
+
+    if (strcmp(argv[0], "bg") == 0) {
+        return bg_builtin(argc, argv);
+    }
+
+    if (strcmp(argv[0], "kill") == 0) {
+        return kill_builtin(argc, argv);
+    }
+
+    if (strcmp(argv[0], "shellpid") == 0) {
+        return shellpid_builtin(argc, argv);
+    }
+
     cmd = find_command(argv[0]);
 
     if (!cmd) {
@@ -1256,6 +1649,15 @@ static int bnfc_dispatch_simple_with_redirection(int argc,
         return dispatch_command(argc, argv);
     }
 
+    if (argc > 0 && input_file == NULL && output_file == NULL &&
+        (strcmp(argv[0], "jobs") == 0 ||
+         strcmp(argv[0], "fg") == 0 ||
+         strcmp(argv[0], "bg") == 0 ||
+         strcmp(argv[0], "kill") == 0 ||
+         strcmp(argv[0], "shellpid") == 0)) {
+        return dispatch_command(argc, argv);
+    }
+
     return execute_command_process(argc, argv, input_file, output_file);
 }
 
@@ -1456,6 +1858,78 @@ static int bnfc_dispatch_if_statement(IfStatement ifstatement)
     return status;
 }
 
+static void commandline_display_name(CommandLine commandline, char *out, size_t out_size)
+{
+    int argc_list[MAX_PIPE_COMMANDS];
+    char **argv_list[MAX_PIPE_COMMANDS];
+    char *argv_storage[MAX_PIPE_COMMANDS][MAX_ARGS];
+    int command_count = 0;
+    int command_index;
+    size_t used = 0;
+
+    if (out_size == 0) {
+        return;
+    }
+    out[0] = '\0';
+
+    if (commandline == NULL || commandline->kind != is_CommandWithRedir ||
+        bnfc_collect_pipeline(commandline->u.commandWithRedir_.pipeline_,
+                              argc_list,
+                              argv_list,
+                              argv_storage,
+                              &command_count) != 0) {
+        snprintf(out, out_size, "background job");
+        return;
+    }
+
+    for (command_index = 0; command_index < command_count; command_index++) {
+        char part[MAX_INPUT];
+        int written;
+
+        format_argv_command(argc_list[command_index],
+                            argv_list[command_index],
+                            part,
+                            sizeof(part));
+        written = snprintf(out + used,
+                           out_size - used,
+                           "%s%s",
+                           command_index == 0 ? "" : " | ",
+                           part);
+        if (written < 0 || (size_t) written >= out_size - used) {
+            out[out_size - 1] = '\0';
+            break;
+        }
+        used += (size_t) written;
+    }
+
+    bnfc_free_pipeline_argvs(command_count, argc_list, argv_list);
+}
+
+static int start_background_commandline(CommandLine commandline)
+{
+    pid_t pid;
+    char command[MAX_INPUT];
+
+    commandline_display_name(commandline, command, sizeof(command));
+
+    pid = fork();
+    if (pid < 0) {
+        fprintf(stderr, "fork: %s\n", strerror(errno));
+        return 1;
+    }
+
+    if (pid == 0) {
+        int status;
+
+        setpgid(0, 0);
+        status = bnfc_dispatch_command_line(commandline);
+        _exit(status < 0 ? 0 : status);
+    }
+
+    setpgid(pid, pid);
+    return add_background_job(pid, command);
+}
+
 static int bnfc_dispatch_job(Job job)
 {
     CommandLine commandline;
@@ -1470,9 +1944,7 @@ static int bnfc_dispatch_job(Job job)
 
     case is_BackgroundJob:
         commandline = job->u.backgroundJob_.commandline_;
-        fprintf(stderr, "Background jobs parsed, but BNFC execution does not handle them yet\n");
-        (void) commandline;
-        return 1;
+        return start_background_commandline(commandline);
 
     case is_AssignmentJob:
         return bnfc_dispatch_assignment(job->u.assignmentJob_.assignment_);
@@ -1513,20 +1985,99 @@ static int line_contains_shell_syntax(const char *line)
     return strpbrk(line, "|<>&;") != NULL;
 }
 
+static int line_contains_glob(const char *line)
+{
+    return strpbrk(line, "*?") != NULL;
+}
+
+static int word_contains_glob(const char *word)
+{
+    return word != NULL && strpbrk(word, "*?") != NULL;
+}
+
+static void free_expanded_argv(int argc, char **owned)
+{
+    int index;
+
+    for (index = 0; index < argc; index++) {
+        free(owned[index]);
+    }
+}
+
+static int expand_glob_argv(int argc, char **argv,
+                            char **expanded,
+                            char **owned,
+                            int max_args)
+{
+    int out_argc = 0;
+    int index;
+
+    for (index = 0; index < max_args; index++) {
+        expanded[index] = NULL;
+        owned[index] = NULL;
+    }
+
+    for (index = 0; index < argc && out_argc < max_args - 1; index++) {
+        glob_t matches;
+        int glob_status;
+        size_t match_index;
+
+        if (index == 0 || !word_contains_glob(argv[index])) {
+            expanded[out_argc++] = argv[index];
+            continue;
+        }
+
+        memset(&matches, 0, sizeof(matches));
+        glob_status = glob(argv[index], 0, NULL, &matches);
+        if (glob_status != 0 || matches.gl_pathc == 0) {
+            globfree(&matches);
+            expanded[out_argc++] = argv[index];
+            continue;
+        }
+
+        for (match_index = 0;
+             match_index < matches.gl_pathc && out_argc < max_args - 1;
+             match_index++) {
+            owned[out_argc] = shell_strdup(matches.gl_pathv[match_index]);
+            if (owned[out_argc] == NULL) {
+                globfree(&matches);
+                free_expanded_argv(out_argc, owned);
+                return -1;
+            }
+            expanded[out_argc] = owned[out_argc];
+            out_argc++;
+        }
+        globfree(&matches);
+    }
+
+    expanded[out_argc] = NULL;
+    return out_argc;
+}
+
 static int run_exec_child(int argc, char **argv)
 {
     char *child_argv[MAX_ARGS + 3];
+    char *expanded_argv[MAX_ARGS];
+    char *owned_argv[MAX_ARGS];
+    int expanded_argc;
     int index;
+
+    expanded_argc = expand_glob_argv(argc, argv, expanded_argv, owned_argv, MAX_ARGS);
+    if (expanded_argc < 0) {
+        fprintf(stderr, "glob: out of memory\n");
+        _exit(1);
+    }
 
     child_argv[0] = (char *) shell_program_path;
     child_argv[1] = INTERNAL_RUN_COMMAND_FLAG;
-    for (index = 0; index < argc && index + 3 < MAX_ARGS + 3; index++) {
-        child_argv[index + 2] = argv[index];
+    for (index = 0; index < expanded_argc && index + 3 < MAX_ARGS + 3; index++) {
+        child_argv[index + 2] = expanded_argv[index];
     }
     child_argv[index + 2] = NULL;
 
     execvp(child_argv[0], child_argv);
     fprintf(stderr, "%s: execvp: %s\n", child_argv[0], strerror(errno));
+    free_expanded_argv(expanded_argc, owned_argv);
     _exit(127);
 }
 
@@ -2104,73 +2655,78 @@ static int fallback_nl_to_command(const char *request, char *command, size_t com
     return 1;
 }
 
-static void append_shell_quoted(char *out, size_t out_size, const char *text)
+static int request_has_prefix_word(const char *request, const char *word,
+                                   const char **rest)
 {
-    size_t used = strlen(out);
+    size_t length = strlen(word);
 
-    if (used + 1 < out_size) {
-        out[used++] = '\'';
-        out[used] = '\0';
+    if (strncmp(request, word, length) != 0) {
+        return 0;
     }
 
-    while (*text != '\0' && used + 1 < out_size) {
-        if (*text == '\'') {
-            if (used + 4 >= out_size) {
-                break;
-            }
-            out[used++] = '\'';
-            out[used++] = '\\';
-            out[used++] = '\'';
-            out[used++] = '\'';
-        } else {
-            out[used++] = *text;
-        }
-        out[used] = '\0';
-        text++;
+    if (request[length] != '\0' &&
+        request[length] != ' ' &&
+        request[length] != '\t') {
+        return 0;
     }
 
-    if (used + 1 < out_size) {
-        out[used++] = '\'';
-        out[used] = '\0';
-    }
+    *rest = skip_spaces(request + length);
+    return 1;
 }
 
-static int read_helper_command(const char *request, char *command, size_t command_size)
+static int extract_url_from_request(const char *request, char *url, size_t url_size)
 {
-    const char *helper = getenv("MYSH_LLM_HELPER");
-    char shell_command[MAX_INPUT * 2];
-    char prompt[MAX_INPUT * 2];
-    FILE *pipe;
+    const char *start = strstr(request, "http://");
+    size_t index = 0;
 
-    if (helper == NULL || *helper == '\0') {
-        if (access("./ollama_llm_helper.sh", X_OK) == 0) {
-            helper = "./ollama_llm_helper.sh";
-        } else {
-            return 0;
-        }
+    if (start == NULL) {
+        start = strstr(request, "https://");
     }
-
-    snprintf(prompt, sizeof(prompt),
-             "Convert this request to one safe busybox_shell command. "
-             "Return only the command, no markdown: %s",
-             request);
-
-    snprintf(shell_command, sizeof(shell_command), "%s ", helper);
-    append_shell_quoted(shell_command, sizeof(shell_command), prompt);
-
-    pipe = popen(shell_command, "r");
-    if (pipe == NULL) {
+    if (start == NULL) {
         return 0;
     }
 
-    if (fgets(command, command_size, pipe) == NULL) {
-        pclose(pipe);
+    while (start[index] != '\0' &&
+           start[index] != ' ' &&
+           start[index] != '\t' &&
+           start[index] != '\r' &&
+           start[index] != '\n' &&
+           index + 1 < url_size) {
+        url[index] = start[index];
+        index++;
+    }
+    url[index] = '\0';
+    return url[0] != '\0';
+}
+
+static int agent_request_to_rpc_command(const char *request,
+                                        char *command,
+                                        size_t command_size)
+{
+    char lower[MAX_INPUT];
+    char url[MAX_INPUT];
+
+    lowercase_copy(lower, sizeof(lower), request);
+
+    if (text_contains(lower, "tool") &&
+        (text_contains(lower, "list") || text_contains(lower, "available"))) {
+        snprintf(command, command_size, "rpc list_tools");
+    } else if (text_contains(lower, "time") || text_contains(lower, "date")) {
+        snprintf(command, command_size, "rpc call_tool get_time");
+    } else if (text_contains(lower, "list") || text_contains(lower, "files")) {
+        snprintf(command, command_size, "rpc call_tool list_files path:.");
+    } else if ((text_contains(lower, "fetch") || text_contains(lower, "http")) &&
+               extract_url_from_request(request, url, sizeof(url))) {
+        snprintf(command, command_size, "rpc call_tool http_get url:%s", url);
+    } else if (text_contains(lower, "delete older") ||
+               text_contains(lower, "old files")) {
+        snprintf(command, command_size,
+                 "rpc call_tool delete_older_than_days path:. days:30 dry_run:true");
+    } else {
         return 0;
     }
 
-    pclose(pipe);
-    trim_newline(command);
-    return !is_blank_line(command);
+    return 1;
 }
 
 static int command_is_safe_to_dispatch(char *command)
@@ -2216,11 +2772,31 @@ static int command_is_safe_to_dispatch(char *command)
 
 static int dispatch_command_line(const char *command)
 {
+    char copy[MAX_INPUT];
+    char *argv[MAX_ARGS];
+    int argc;
     int status;
+
+    if (line_contains_glob(command) && !line_contains_shell_syntax(command)) {
+        snprintf(copy, sizeof(copy), "%s", command);
+        argc = split_line(copy, argv, MAX_ARGS);
+        if (argc == 0) {
+            return 0;
+        }
+        return execute_command_process(argc, argv, NULL, NULL);
+    }
 
     status = dispatch_bnfc_line(command);
     if (status == 2 && line_contains_shell_syntax(command)) {
         return 1;
+    }
+    if (status == 2) {
+        snprintf(copy, sizeof(copy), "%s", command);
+        argc = split_line(copy, argv, MAX_ARGS);
+        if (argc == 0) {
+            return 0;
+        }
+        return execute_command_process(argc, argv, NULL, NULL);
     }
     return status;
 }
@@ -2230,7 +2806,6 @@ static int dispatch_argv_line_with_bnfc(int argc, char **argv)
     char line[MAX_INPUT];
     size_t used = 0;
     int index;
-    int status;
 
     line[0] = '\0';
     for (index = 0; index < argc; index++) {
@@ -2245,11 +2820,7 @@ static int dispatch_argv_line_with_bnfc(int argc, char **argv)
         used += (size_t) written;
     }
 
-    status = dispatch_bnfc_line(line);
-    if (status == 2 && line_contains_shell_syntax(line)) {
-        return 1;
-    }
-    return status;
+    return dispatch_command_line(line);
 }
 
 static int ask_yes_no(const char *prompt)
@@ -2314,64 +2885,47 @@ static int clarify_missing_nl_arguments(const char *request,
     return 0;
 }
 
-static int try_ollama_after_reject(const char *request,
-                                   const char *previous_command,
-                                   char *accepted_command,
-                                   size_t accepted_command_size)
-{
-    char ollama_command[MAX_INPUT];
-    int status;
-
-    printf("Asking Ollama for another suggestion...\n");
-
-    if (!read_helper_command(request, ollama_command, sizeof(ollama_command))) {
-        printf("No alternate AI suggestion available. Set MYSH_LLM_HELPER to use Ollama.\n");
-        return 0;
-    }
-
-    if (!command_is_safe_to_dispatch(ollama_command)) {
-        fprintf(stderr, "Ollama suggested an unsupported command: %s\n", ollama_command);
-        return 1;
-    }
-
-    if (strcmp(previous_command, ollama_command) == 0) {
-        printf("Ollama suggested the same command: %s\n", ollama_command);
-        return 0;
-    }
-
-    printf("Ollama suggestion: %s\n", ollama_command);
-    if (!ask_yes_no("Run it? [y/N] ")) {
-        return 0;
-    }
-
-    snprintf(accepted_command, accepted_command_size, "%s", ollama_command);
-    status = dispatch_command_line(ollama_command);
-    return status < 0 ? 0 : status;
-}
-
 static int handle_natural_language_request(const char *line, int interactive_terminal)
 {
     const char *request = skip_spaces(line + 1);
+    const char *agent_request;
     char command[MAX_INPUT];
     int clarified;
     int cacheable = 1;
-    int used_helper = 0;
     int status;
 
     if (is_blank_line(request)) {
-        printf("Usage: @ describe what you want the shell to do\n");
+        printf("Usage: @ command request, or @ agent tool question\n");
         return 0;
+    }
+
+    if (request_has_prefix_word(request, "agent", &agent_request)) {
+        if (is_blank_line(agent_request)) {
+            printf("Usage: @ agent ask for a local RPC tool call\n");
+            return 0;
+        }
+        if (!agent_request_to_rpc_command(agent_request, command, sizeof(command))) {
+            printf("Agent suggestion unavailable. Try: @ agent list tools, @ agent get time, or @ agent list files.\n");
+            return 1;
+        }
+        printf("Agent tool suggestion: %s\n", command);
+        if (!interactive_terminal) {
+            printf("Not running suggestion in non-interactive mode.\n");
+            return 0;
+        }
+        if (!ask_yes_no("Run it? [y/N] ")) {
+            return 0;
+        }
+        status = dispatch_command_line(command);
+        return status < 0 ? 0 : status;
     }
 
     if (lookup_nl_cache(request, command, sizeof(command))) {
         printf("AI suggestion: %s\n", command);
         if (interactive_terminal) {
             if (!ask_yes_no("Run it? [y/N] ")) {
-                status = try_ollama_after_reject(request, command, command, sizeof(command));
-                if (status == 0) {
-                    store_nl_cache(request, command);
-                }
-                return status;
+                store_nl_cache(request, command);
+                return 0;
             }
             status = dispatch_command_line(command);
             return status < 0 ? 0 : status;
@@ -2389,13 +2943,18 @@ static int handle_natural_language_request(const char *line, int interactive_ter
         cacheable = 0;
     }
 
-    if (clarified == 0 &&
-        !fallback_nl_to_command(request, command, sizeof(command))) {
-        if (!read_helper_command(request, command, sizeof(command))) {
-            printf("AI suggestion unavailable. Set MYSH_LLM_HELPER or try a simpler request.\n");
+    if (clarified == 0) {
+        if (!fallback_nl_to_command(request, command, sizeof(command))) {
+            printf("AI suggestion unavailable. Try a simpler request or use @ agent for RPC tools.\n");
             return 1;
         }
-        used_helper = 1;
+    }
+
+    if (clarified == 0 && is_blank_line(command)) {
+        if (!fallback_nl_to_command(request, command, sizeof(command))) {
+            printf("AI suggestion unavailable. Try a simpler request or use @ agent for RPC tools.\n");
+            return 1;
+        }
     }
 
     if (!command_is_safe_to_dispatch(command)) {
@@ -2411,12 +2970,8 @@ static int handle_natural_language_request(const char *line, int interactive_ter
 
     if (interactive_terminal) {
         if (!ask_yes_no("Run it? [y/N] ")) {
-            if (!used_helper) {
-                status = try_ollama_after_reject(request, command, command, sizeof(command));
-                if (status == 0 && cacheable) {
-                    store_nl_cache(request, command);
-                }
-                return status;
+            if (cacheable) {
+                store_nl_cache(request, command);
             }
             return 0;
         }
@@ -2466,10 +3021,7 @@ static int run_interactive_shell(void)
             continue;
         }
 
-        status = dispatch_bnfc_line(line);
-        if (status == 2 && line_contains_shell_syntax(line)) {
-            status = 1;
-        }
+        status = dispatch_command_line(line);
 
         if (status < 0) {
             if (interactive_terminal) {

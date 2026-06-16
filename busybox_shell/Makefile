@@ -32,6 +32,8 @@ SRC = main.c \
       cmd_du.c \
       cmd_procinfo.c \
       cmd_threads.c \
+      cmd_rpc.c \
+      cmd_serve.c \
       registry.c \
       register_all_commands.c \
       json_utils.c \
@@ -43,7 +45,7 @@ all: $(TARGET)
 bnfc_parser:
 	$(MAKE) -C $(BNFC_DIR) build
 
-$(TARGET): bnfc_parser $(SRC)
+$(TARGET): $(SRC)
 	$(CC) $(CFLAGS) -o $(TARGET) $(SRC)
 
 clean:

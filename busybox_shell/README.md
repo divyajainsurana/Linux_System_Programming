@@ -94,98 +94,35 @@ AI suggestion: mkdir reports
 Run it? [y/N] y
 ```
 
-Example session:
+The Week 10 submission keeps this path C-only. The natural-language mode uses
+deterministic command mapping inside `main.c`, validates the suggested command,
+and asks for confirmation before running it.
 
-![Natural-language busybox_shell example](docs/images/natural-language-example.jpeg)
+For an agent-style tool call demo, start the C shell service and use
+`@ agent ...`. The shell translates the request into an `rpc` tool call:
 
-The shell can connect to an external LLM helper through `MYSH_LLM_HELPER`.
-The helper receives one prompt argument and should print exactly one
-`busybox_shell` command:
-
-```sh
-MYSH_LLM_HELPER="./my_llm_helper.sh" ./busybox_shell
+```text
+busybox_shell> serve --host 127.0.0.1 --port 9000 --allow get_time,list_files,delete_older_than_days,http_get,pwd,ls &
+busybox_shell> @ agent list tools
+Agent tool suggestion: rpc list_tools
+Run it? [y/N]
+busybox_shell> @ agent get time
+Agent tool suggestion: rpc call_tool get_time
+Run it? [y/N]
+busybox_shell> @ agent list files
+Agent tool suggestion: rpc call_tool list_files path:.
+Run it? [y/N]
 ```
-
-An Ollama helper is included. Install Ollama, pull a local model, then start
-the shell with the helper:
-
-```sh
-ollama pull qwen2.5:3b
-MYSH_LLM_HELPER="./ollama_llm_helper.sh" ./busybox_shell
-```
-
-To use a different local model:
-
-```sh
-OLLAMA_MODEL="mistral" MYSH_LLM_HELPER="./ollama_llm_helper.sh" ./busybox_shell
-```
-
-For faster second suggestions, use a smaller model or a shorter timeout:
-
-```sh
-OLLAMA_MODEL="qwen2.5:1.5b" OLLAMA_TIMEOUT=10 ./busybox_shell
-```
-
-If Ollama was installed locally in this repository, use:
-
-```sh
-cd busybox_shell
-HOME="$PWD/../tools/ollama-home" \
-OLLAMA_MODELS="$PWD/../tools/ollama-models" \
-./busybox_shell
-```
-
-When the shell is started from the `busybox_shell` directory, it automatically
-uses `./ollama_llm_helper.sh` if `MYSH_LLM_HELPER` is not set.
 
 The shell validates the suggested command before running it. Only registered
 commands and shell built-ins are accepted. In interactive mode, suggestions are
 shown first and require confirmation. In non-interactive mode, suggestions are
 shown but not executed.
 
-The shell handles common requests with deterministic rules before calling the
-LLM, then caches successful translations during the session. If you reject a
-deterministic suggestion by answering `n`, the shell asks the configured Ollama
-helper for another suggestion. The Ollama helper also reads
-`./busybox_shell help --json` so its prompt uses the current command list
-instead of a hardcoded list.
-
-If no helper is configured, the shell uses a tiny demo fallback for common
-requests such as listing files, creating directories, printing text, showing
-the current directory, printing the date, showing command help, counting files,
-showing file beginnings/endings, showing disk usage, showing the current user,
-and showing system information.
-
-### Training Data
-
-The project includes a generator for fine-tuning examples. It reads the live
-shell command list and help output, then writes prompt/completion pairs:
-
-```sh
-make
-./generate_training_data.sh
-```
-
-The output is:
-
-```text
-training_data.jsonl
-```
-
-Example rows:
-
-```json
-{"prompt":"what does --json do in ls","completion":"ls -h --json","source":"option-help"}
-{"prompt":"what is the version of ls","completion":"ls --version","source":"version"}
-```
-
-Regenerate this file whenever commands or options change.
-
-For a LoRA fine-tuning workflow, see:
-
-```text
-training/README.md
-```
+The shell handles common requests such as listing files, creating directories,
+printing text, showing the current directory, printing the date, showing command
+help, counting files, showing file beginnings/endings, showing disk usage,
+showing the current user, and showing system information.
 
 ## Commands
 
@@ -745,15 +682,15 @@ Case     Test                                           Result   BusyBox output
 -------- ---------------------------------------------- -------- ----------------------------------------------------------
 04.01    ls shows Makefile                              PASS     Makefile README.md argtable3 busybox_shell cmd_cat.c cm...
 04.02    ls help prints usage                           PASS     Usage: ls [-a] [-l] [-R] [-S] [-t] [-r] [--color] [--js...
-04.03    ls accepts /tmp path                           PASS     Ollama-darwin.zip Visual Studio Code-ea759e25-7e8c-46fd...
+04.03    ls accepts /tmp path                           PASS     Visual Studio Code-ea759e25-7e8c-46fd...
 04.04    ls json includes Makefile                      PASS     [ {"name":"Makefile","path":"./Makefile","type":"file",...
 04.05    ls json help includes summary                  PASS     {"name":"ls","summary":"list directory contents","descr...
 04.06    help ls json includes description              PASS     {"name":"ls","summary":"list directory contents","descr...
 04.07    help json includes commands                    PASS     {"builtins":[{"name":"help","summary":"show this help, ...
 04.08    ls -l shows Makefile                           PASS     -rw-r--r-- 1 divyajain staff 1881 May 14 12:09 Makefile
-04.09    ls -S sorts and shows Makefile                 PASS     busybox_shell main.c training_data.jsonl cmd_pkg.c test...
-04.10    ls -t sorts and shows Makefile                 PASS     README.md test.sh training training_data.jsonl docs gen...
-04.11    ls -r reverses and shows Makefile              PASS     training_data.jsonl training test.sh registry.c registe...
+04.09    ls -S sorts and shows Makefile                 PASS     busybox_shell main.c cmd_pkg.c test.sh README.md...
+04.10    ls -t sorts and shows Makefile                 PASS     README.md test.sh docs cmd_serve.c main.c...
+04.11    ls -r reverses and shows Makefile              PASS     test.sh registry.c register_all_commands.c main.c...
 04.12    ls -R shows nested file                        PASS     subdir test_ls_recursive/subdir: nested.txt
 
 [05] Testing cat

@@ -278,10 +278,11 @@ static int list_path(const char *path, const struct ls_options *opts,
 int ls_run(int argc, char **argv)
 {
     struct ls_options opts = {0, 0, 0, 0, 0, 0, 0, 0};
-    const char *path = ".";
+    const char *paths[256];
+    int path_count = 0;
     int index;
     int json_first = 1;
-    int status;
+    int status = 0;
 
     for (index = 1; index < argc; index++) {
         if (strcmp(argv[index], "-h") == 0 || strcmp(argv[index], "--help") == 0) {
@@ -310,14 +311,24 @@ int ls_run(int argc, char **argv)
             ls_print_usage(stderr);
             return 1;
         } else {
-            path = argv[index];
+            if (path_count < (int) (sizeof(paths) / sizeof(paths[0]))) {
+                paths[path_count++] = argv[index];
+            }
         }
+    }
+
+    if (path_count == 0) {
+        paths[path_count++] = ".";
     }
 
     if (opts.json) {
         printf("[\n");
     }
-    status = list_path(path, &opts, 0, &json_first);
+    for (index = 0; index < path_count; index++) {
+        if (list_path(paths[index], &opts, path_count > 1, &json_first) != 0) {
+            status = 1;
+        }
+    }
     if (opts.json) {
         printf("\n]\n");
     }
@@ -326,7 +337,7 @@ int ls_run(int argc, char **argv)
 
 void ls_print_usage(FILE *out)
 {
-    fprintf(out, "Usage: ls [-a] [-l] [-R] [-S] [-t] [-r] [--color] [--json] [PATH]\n");
+    fprintf(out, "Usage: ls [-a] [-l] [-R] [-S] [-t] [-r] [--color] [--json] [PATH...]\n");
 
     fprintf(out, "\nDescription:\n");
     fprintf(out, "  List files in a directory (default: current directory).\n");

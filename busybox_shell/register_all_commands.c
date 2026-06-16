@@ -22,6 +22,8 @@ void register_dirname_command(void);
 void register_du_command(void);
 void register_procinfo_command(void);
 void register_threads_command(void);
+void register_rpc_command(void);
+void register_serve_command(void);
 
 void register_all_builtin_commands(void)
 {
@@ -48,4 +50,6 @@ void register_all_builtin_commands(void)
     register_du_command();
     register_procinfo_command();
     register_threads_command();
+    register_rpc_command();
+    register_serve_command();
 }

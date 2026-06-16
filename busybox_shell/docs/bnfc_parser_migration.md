@@ -232,7 +232,7 @@ Natural-language flow:
 
 ```text
 @ request
-  -> built-in phrase mapper or MYSH_LLM_HELPER/Ollama helper
+  -> built-in C phrase mapper
   -> suggested shell command
   -> safety validation
   -> BNFC parser
@@ -271,6 +271,8 @@ dirname
 du
 procinfo
 threads
+rpc
+serve
 ```
 
 Examples:
@@ -331,24 +333,14 @@ Internally, the natural-language path uses:
 ```c
 handle_natural_language_request()
 fallback_nl_to_command()
-read_helper_command()
 command_is_safe_to_dispatch()
 dispatch_command_line()
 ```
 
-There are two ways suggestions are produced:
-
-1. Built-in fallback mapping for common requests.
-2. External helper integration through `MYSH_LLM_HELPER`.
-
-If `MYSH_LLM_HELPER` is not set and `./ollama_llm_helper.sh` is executable, the
-shell can use that helper.
-
-Example helper usage:
-
-```sh
-MYSH_LLM_HELPER="./ollama_llm_helper.sh" ./busybox_shell
-```
+For the Week 10 C-only submission, suggestions are produced by the built-in C
+mapper. Agent-style requests use `agent_request_to_rpc_command()` to suggest a
+safe `rpc` tool call, for example `rpc list_tools` or
+`rpc call_tool get_time`.
 
 The natural-language interface does not bypass the command system. A suggestion
 such as:

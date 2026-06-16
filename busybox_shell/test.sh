@@ -201,6 +201,8 @@ run_test "@ last lines suggests tail" 'printf "@show last lines of Makefile\nexi
 run_test "@ json list suggests ls --json" 'printf "@list file names in json format\nexit\n" | ./busybox_shell | grep -q "AI suggestion: ls --json"'
 run_test "@ reverse list suggests ls -r" 'printf "@list files in reverse order\nexit\n" | ./busybox_shell | grep -q "AI suggestion: ls -r"'
 run_test "@ hidden details suggests ls -a -l" 'printf "@list hidden files with details\nexit\n" | ./busybox_shell | grep -q "AI suggestion: ls -a -l"'
+run_test "@ agent suggests rpc list_tools" 'printf "@agent list tools\nexit\n" | ./busybox_shell | grep -q "Agent tool suggestion: rpc list_tools"'
+run_test "@ agent suggests rpc get_time" 'printf "@agent get time\nexit\n" | ./busybox_shell | grep -q "Agent tool suggestion: rpc call_tool get_time"'
 
 print_section "Testing localdate"
 run_test "localdate prints date" './busybox_shell localdate | grep -Eq "Local Date: [0-9]{4}-[0-9]{2}-[0-9]{2}"'
@@ -278,6 +280,15 @@ run_test "clear json reports cleared" './busybox_shell clear --json | grep -q "\
 run_test "external /bin/echo runs" './busybox_shell /bin/echo external-ok | grep -q "^external-ok$"'
 run_test "external command can run in pipeline" './busybox_shell /bin/echo external pipeline "|" wc -w | grep -q "2"'
 run_test "external date accepts plus format" './busybox_shell date +%Y | grep -q "$(date +%Y)"'
+run_test "rpc appears in shell help" './busybox_shell help | grep -q "rpc"'
+run_test "rpc help prints usage" './busybox_shell help rpc | grep -q "Usage: rpc"'
+run_test "rpc help shows timeout option" './busybox_shell help rpc | grep -q -- "--timeout SECONDS"'
+run_test "rpc json help includes summary" './busybox_shell help rpc --json | grep -q "\"name\":\"rpc\""'
+run_test "rpc protocol prints line format" './busybox_shell rpc --protocol | grep -q "Line-based RPC protocol"'
+run_test "rpc rejects invalid timeout" '! ./busybox_shell rpc --timeout 0 initialize'
+run_test "serve appears in shell help" './busybox_shell help | grep -q "serve"'
+run_test "serve help prints usage" './busybox_shell help serve | grep -q "Usage: serve"'
+run_test "serve rejects invalid port" '! ./busybox_shell serve --port 0'
 
 print_section "Testing process and thread support"
 run_test "pipeline uses process path" './busybox_shell echo alpha beta gamma "|" wc -w | grep -q "3"'
@@ -297,7 +308,19 @@ run_test "threads command supports sleep" './busybox_shell threads -n 2 --sleep 
 run_test "threads json includes count" './busybox_shell threads --json -n 2 | grep -q "\"threads\":2"'
 run_test "threads json includes sum" './busybox_shell threads --json -n 2 | grep -q "\"sum\":5"'
 run_test "threads json includes thread ids" './busybox_shell threads --json -n 2 | grep -q "\"thread_id\":"'
+run_test "threads countdown mode runs" './busybox_shell threads --mode countdown -n 2 | grep -q "countdown complete with 2 threads"'
+run_test "threads race mode shows unprotected counter" './busybox_shell threads --mode race -n 4 | grep -q "race mode has no mutex"'
+run_test "threads mutex mode protects counter" './busybox_shell threads --mode mutex -n 4 | grep -q "mutex protected shared counter"'
+run_test "threads mutex json includes protected true" './busybox_shell threads --mode mutex --json -n 2 | grep -q "\"protected\":true"'
+run_test "threads signal mode stops after sigterm" 'printf "threads --mode signal -n 2 --ticks 20 &\nsleep 1\nkill -15 %%1\nfg %%1\nexit\n" | ./busybox_shell | grep -q "all signal demo threads stopped"'
+run_test "threads signal mode auto-stops" './busybox_shell threads --mode signal -n 2 --ticks 2 | grep -q "signal demo completed without signal"'
 run_test "binary imports pthread calls" 'nm -u ./busybox_shell | grep -Eq "pthread_create|_pthread_create"'
+run_test "background job is listed" 'printf "sleep 1 &\njobs -l\nkill %%1\nexit\n" | ./busybox_shell | grep -Eq "\\[1\\] Running +[0-9]+ sleep 1"'
+run_test "foreground waits for background job" 'printf "sleep 1 &\nfg %%1\njobs -l\nexit\n" | ./busybox_shell | grep -Eq "\\[1\\] Done +[0-9]+ sleep 1"'
+run_test "kill marks background job done" 'printf "sleep 5 &\nkill %%1\njobs -l\nexit\n" | ./busybox_shell | grep -Eq "\\[1\\] Done +[0-9]+ sleep 5"'
+run_test "shellpid prints parent shell process" 'printf "shellpid\nexit\n" | ./busybox_shell | grep -Eq "busybox_shell pid=[0-9]+ ppid=[0-9]+ pgid=[0-9]+"'
+run_test "sigterm can stop background job" 'printf "sleep 5 &\nkill -15 %%1\njobs -l\nexit\n" | ./busybox_shell | grep -Eq "\\[1\\] Done +[0-9]+ sleep 5"'
+run_test "sigkill can stop background job" 'printf "sleep 5 &\nkill -9 %%1\njobs -l\nexit\n" | ./busybox_shell | grep -Eq "\\[1\\] Done +[0-9]+ sleep 5"'
 
 print_section "Testing file/path commands"
 run_test "pwd json includes cwd" './busybox_shell pwd --json | grep -q "\"cwd\":"'
