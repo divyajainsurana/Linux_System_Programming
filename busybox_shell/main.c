@@ -2638,7 +2638,14 @@ static int fallback_nl_to_command(const char *request, char *command, size_t com
                 text_contains(lower, "end of")) &&
                extract_last_name(request, target, sizeof(target))) {
         snprintf(command, command_size, "tail %s", target);
+    } else if (text_contains(lower, "disk") &&
+               (text_contains(lower, "size") ||
+                text_contains(lower, "usage") ||
+                text_contains(lower, "space"))) {
+        snprintf(command, command_size, "du .");
     } else if ((text_contains(lower, "disk usage") ||
+                text_contains(lower, "disk size") ||
+                text_contains(lower, "disk space") ||
                 text_contains(lower, "size of")) &&
                extract_last_name(request, target, sizeof(target))) {
         snprintf(command, command_size, "du %s", target);
@@ -2782,6 +2789,9 @@ static int write_openrouter_request_file(const char *request,
         "for this C BusyBox shell. Use only these commands: help, ls, cat, "
         "pkg, pwd, wc, touch, mkdir, rmdir, echo, whoami, clear, id, uname, "
         "head, tail, cp, mv, rm, dirname, du, procinfo, threads, rpc, serve. "
+        "For disk size or disk usage requests, prefer 'du .' or 'du README.md'; "
+        "do not suggest 'du -sh /' because this shell's du does not support -s/-h "
+        "and root scanning may hit permission errors. "
         "Do not use pipes, redirects, semicolons, backticks, variables, or explanations.");
     strncat(body, "\"},{\"role\":\"user\",\"content\":\"", sizeof(body) - strlen(body) - 1);
     append_json_escaped(body, sizeof(body), request);
